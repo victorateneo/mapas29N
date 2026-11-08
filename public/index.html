@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mapa de prioridades · Ateneo del Dato</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<style>
+/* Manual de marca Ateneo 2026: azul eléctrico protagonista, azul oscuro en lugar del negro, blanco.
+   Layout: mapa a pantalla completa; cabecera azul oscuro; panel de control a la izquierda; leyenda abajo a la derecha. */
+/* Gigalypse: coloca el archivo en /assets/fonts/Gigalypse.woff2. Mientras no esté, se usa Montserrat. */
+@font-face { font-family: "Gigalypse"; src: url("/assets/fonts/Gigalypse.woff2") format("woff2"); font-display: swap; }
+:root {
+  --azul: #0033FF;          /* A1 */
+  --oscuro: #00192C;        /* G3: textos y cabecera */
+  --blanco: #FFFFFF;
+  --gris: #6C6D6D;          /* G2: texto secundario */
+  --neutro: #D3D4CF;        /* G1: Nula, sin acceso */
+  --fondo: #EEF2F8;         /* mar: tinte muy claro del azul */
+  --linea: #DCE3EE;
+  --rojo: #CA0617;          /* R1: bajadas */
+  --font-display: "Gigalypse", "Montserrat", system-ui, sans-serif;
+  --font-body: "Montserrat", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: var(--fondo); color: var(--oscuro); font-family: var(--font-body); font-size: 13px; }
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
+.display { font-family: var(--font-display); font-weight: 800; text-transform: uppercase; letter-spacing: .01em; line-height: 1.05; }
+.num { font-variant-numeric: tabular-nums; }
+
+#app { position: absolute; inset: 0; display: grid; grid-template-rows: 60px 1fr; }
+header {
+  background: var(--oscuro); color: var(--blanco);
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 20px; z-index: 5;
+}
+.brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.wordmark { font-family: var(--font-display); font-weight: 800; font-size: 15px; letter-spacing: .04em; line-height: 1; white-space: nowrap; }
+.wordmark small { display: block; font-size: 9px; letter-spacing: .32em; font-weight: 600; opacity: .7; margin-top: 3px; }
+.cross { opacity: .45; font-weight: 300; font-size: 18px; }
+.client { font-weight: 600; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; border: 1px solid rgba(255,255,255,.35); padding: 5px 9px; border-radius: 3px; white-space: nowrap; }
+.title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.title h1 { font-size: 17px; white-space: nowrap; }
+.title .sub { font-size: 11px; opacity: .65; white-space: nowrap; }
+.who { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.who .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--azul); box-shadow: 0 0 0 3px rgba(0,51,255,.35); }
+
+main { position: relative; }
+#map { position: absolute; inset: 0; }
+
+/* Panel */
+#panel {
+  position: absolute; top: 16px; left: 16px; width: 290px; max-height: calc(100% - 32px); overflow-y: auto;
+  background: var(--blanco); border-radius: 6px; box-shadow: 0 6px 24px rgba(0,25,44,.12);
+  display: flex; flex-direction: column; z-index: 3;
+}
+.sec { padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; border-bottom: 1px solid var(--linea); }
+.sec:last-child { border-bottom: 0; }
+.lbl { font-size: 10px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--gris); }
+.seg { display: grid; grid-template-columns: repeat(4, 1fr); border: 1.5px solid var(--oscuro); border-radius: 4px; overflow: hidden; }
+.seg button { background: var(--blanco); border: 0; border-right: 1.5px solid var(--oscuro); padding: 7px 2px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--oscuro); color: var(--blanco); }
+.seg button:hover:not([aria-pressed="true"]) { background: #E6ECF7; }
+select, input[type="search"] {
+  width: 100%; padding: 8px 10px; border: 1px solid #B9C3D3; border-radius: 4px; background: var(--blanco);
+}
+.searchwrap { position: relative; }
+#results { position: absolute; left: 0; right: 0; top: calc(100% + 3px); background: var(--blanco); border: 1px solid #B9C3D3; border-radius: 4px; box-shadow: 0 8px 24px rgba(0,25,44,.15); z-index: 10; max-height: 260px; overflow-y: auto; display: none; }
+#results button { display: flex; justify-content: space-between; gap: 8px; width: 100%; text-align: left; padding: 8px 10px; background: none; border: 0; border-bottom: 1px solid var(--linea); cursor: pointer; }
+#results button:hover, #results button:focus-visible { background: #E6ECF7; }
+#results .p { color: var(--gris); font-size: 11px; white-space: nowrap; }
+.chips { display: flex; flex-direction: column; gap: 4px; }
+.chip { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 9px; padding: 5px 6px; border-radius: 4px; border: 0; background: none; cursor: pointer; text-align: left; }
+.chip:hover { background: #F1F4FA; }
+.chip .sw { width: 14px; height: 14px; border-radius: 2px; border: 1px solid rgba(0,25,44,.15); }
+.chip .n { color: var(--gris); font-size: 11px; }
+.chip[aria-pressed="false"] { opacity: .38; }
+.chip[aria-pressed="false"] .sw { background: transparent !important; }
+.hint { font-size: 11px; color: var(--gris); line-height: 1.45; }
+.btn { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 12px; border-radius: 4px; border: 0; background: var(--azul); color: var(--blanco); font-weight: 600; cursor: pointer; }
+.btn:hover { background: #0029CC; }
+.btn[disabled] { background: var(--neutro); color: var(--gris); cursor: default; }
+.demo { background: #F4F7FC; }
+#focus-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--oscuro); color: var(--blanco); border-radius: 4px; padding: 9px 10px 9px 12px; }
+#focus-bar[hidden] { display: none; }
+#focus-bar > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#focus-bar .lbl { color: #A9D5FF; }
+#focus-bar b { font-family: var(--font-display); font-weight: 800; text-transform: uppercase; font-size: 14px; line-height: 1.1; }
+#focus-bar button { flex: none; background: transparent; color: var(--blanco); border: 1px solid rgba(255,255,255,.5); border-radius: 3px; padding: 5px 8px; font-size: 11px; font-weight: 600; cursor: pointer; }
+#focus-bar button:hover { background: rgba(255,255,255,.12); }
+.demo .lbl { color: var(--azul); }
+
+/* Leyenda */
+#legend { position: absolute; right: 16px; bottom: 24px; background: var(--blanco); border-radius: 6px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0,25,44,.12); z-index: 3; max-width: 230px; display: flex; flex-direction: column; gap: 8px; }
+#legend .rows { display: flex; flex-direction: column; gap: 5px; }
+#legend .row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+#legend .row .sw { width: 18px; height: 12px; border-radius: 2px; border: 1px solid rgba(0,25,44,.12); flex: none; }
+#legend .note { font-size: 10.5px; color: var(--gris); line-height: 1.4; }
+
+#fatal { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: var(--fondo); z-index: 20; padding: 24px; }
+#fatal div { max-width: 440px; background: var(--blanco); border-radius: 6px; padding: 24px; box-shadow: 0 6px 24px rgba(0,25,44,.12); display: flex; flex-direction: column; gap: 10px; }
+#fatal b { font-family: var(--font-display); font-weight: 800; text-transform: uppercase; font-size: 18px; }
+#status { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); background: var(--oscuro); color: var(--blanco); padding: 8px 14px; border-radius: 4px; font-size: 12px; z-index: 4; display: none; box-shadow: 0 6px 20px rgba(0,25,44,.25); }
+#count { position: absolute; left: 322px; bottom: 24px; background: var(--blanco); border-radius: 4px; padding: 6px 10px; font-size: 11.5px; box-shadow: 0 4px 14px rgba(0,25,44,.1); z-index: 3; }
+
+/* Estilos base de MapLibre (mínimos necesarios) */
+.maplibregl-map { position: relative; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+.maplibregl-canvas { position: absolute; left: 0; top: 0; }
+.maplibregl-canvas-container.maplibregl-interactive { cursor: grab; user-select: none; }
+.maplibregl-canvas-container.maplibregl-interactive:active { cursor: grabbing; }
+.maplibregl-canvas-container.maplibregl-touch-drag-pan, .maplibregl-canvas-container.maplibregl-touch-drag-pan .maplibregl-canvas { touch-action: pinch-zoom; }
+.maplibregl-canvas-container.maplibregl-touch-zoom-rotate.maplibregl-touch-drag-pan, .maplibregl-canvas-container.maplibregl-touch-zoom-rotate.maplibregl-touch-drag-pan .maplibregl-canvas { touch-action: none; }
+.maplibregl-ctrl-top-right, .maplibregl-ctrl-bottom-right { position: absolute; right: 0; z-index: 2; pointer-events: none; }
+.maplibregl-ctrl-top-right { top: 0; } .maplibregl-ctrl-bottom-right { bottom: 0; }
+.maplibregl-ctrl { pointer-events: auto; clear: both; transform: translate(0); }
+.maplibregl-ctrl-top-right .maplibregl-ctrl { float: right; margin: 16px 16px 0 0; }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl { float: right; margin: 0 10px 6px 0; }
+.maplibregl-ctrl-group { background: var(--blanco); overflow: hidden; }
+.maplibregl-ctrl-group button { display: block; width: 32px; height: 32px; border: 0; background: transparent; cursor: pointer; position: relative; }
+.maplibregl-ctrl-group button + button { border-top: 1px solid var(--linea); }
+.maplibregl-ctrl-group button:hover { background: #F1F4FA; }
+.maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon::before, .maplibregl-ctrl-zoom-out .maplibregl-ctrl-icon::before { content: ""; position: absolute; left: 10px; top: 15px; width: 12px; height: 2px; background: var(--oscuro); }
+.maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon::after { content: ""; position: absolute; left: 15px; top: 10px; width: 2px; height: 12px; background: var(--oscuro); }
+.maplibregl-ctrl-attrib { background: rgba(255,255,255,.85); padding: 2px 8px; border-radius: 3px; color: var(--gris); }
+.maplibregl-ctrl-attrib a { color: var(--gris); }
+.maplibregl-ctrl-attrib-button { display: none; }
+.maplibregl-popup { position: absolute; top: 0; left: 0; display: flex; will-change: transform; pointer-events: none; z-index: 4; }
+.maplibregl-popup-anchor-top, .maplibregl-popup-anchor-top-left, .maplibregl-popup-anchor-top-right { flex-direction: column; }
+.maplibregl-popup-anchor-bottom, .maplibregl-popup-anchor-bottom-left, .maplibregl-popup-anchor-bottom-right { flex-direction: column-reverse; }
+.maplibregl-popup-anchor-left { flex-direction: row; } .maplibregl-popup-anchor-right { flex-direction: row-reverse; }
+.maplibregl-popup-tip { width: 0; height: 0; border: 8px solid transparent; z-index: 1; }
+.maplibregl-popup-anchor-top .maplibregl-popup-tip { align-self: center; border-top: none; border-bottom-color: var(--oscuro); }
+.maplibregl-popup-anchor-top-left .maplibregl-popup-tip { align-self: flex-start; border-top: none; border-left: none; border-bottom-color: var(--oscuro); }
+.maplibregl-popup-anchor-top-right .maplibregl-popup-tip { align-self: flex-end; border-top: none; border-right: none; border-bottom-color: var(--oscuro); }
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { align-self: center; border-bottom: none; border-top-color: var(--blanco); }
+.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip { align-self: flex-start; border-bottom: none; border-left: none; border-top-color: var(--blanco); }
+.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { align-self: flex-end; border-bottom: none; border-right: none; border-top-color: var(--blanco); }
+.maplibregl-popup-anchor-left .maplibregl-popup-tip { align-self: center; border-left: none; border-right-color: var(--blanco); }
+.maplibregl-popup-anchor-right .maplibregl-popup-tip { align-self: center; border-right: none; border-left-color: var(--blanco); }
+.maplibregl-popup-content { position: relative; background: var(--blanco); pointer-events: auto; }
+.maplibregl-popup-close-button { position: absolute; background: transparent; border: 0; cursor: pointer; border-radius: 0 6px 0 0; }
+.maplibregl-popup-close-button:hover { background: rgba(255,255,255,.12); }
+
+/* Popup */
+.maplibregl-popup-content { padding: 0; border-radius: 6px; box-shadow: 0 10px 30px rgba(0,25,44,.22); font-family: var(--font-body); color: var(--oscuro); }
+.maplibregl-popup-close-button { font-size: 18px; width: 28px; height: 28px; color: var(--blanco); right: 2px; top: 2px; }
+.pp { width: 300px; }
+.pp-h { background: var(--oscuro); color: var(--blanco); padding: 10px 34px 10px 14px; border-radius: 6px 6px 0 0; display: flex; flex-direction: column; gap: 4px; }
+.pp-h .t { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; opacity: .7; font-weight: 600; }
+.pp-h .n { font-family: var(--font-display); font-weight: 800; font-size: 17px; text-transform: uppercase; line-height: 1.1; text-wrap: balance; }
+.pp-h .loc { font-size: 11px; opacity: .75; }
+.pp-b { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+.prio { display: flex; align-items: center; gap: 10px; }
+.pill { padding: 4px 10px; border-radius: 3px; font-weight: 800; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.score { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.score .top { display: flex; justify-content: space-between; font-size: 11px; color: var(--gris); }
+.score .top b { color: var(--oscuro); font-weight: 600; }
+.bar { height: 6px; background: #E6ECF7; border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--oscuro); }
+.k { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.k div { background: #F1F4FA; border-radius: 4px; padding: 5px 8px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.k .l { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--gris); font-weight: 600; }
+.k .v { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmp { display: flex; flex-direction: column; gap: 6px; }
+.cmp .hd { display: flex; justify-content: space-between; align-items: baseline; }
+.cmp .key { display: flex; gap: 10px; font-size: 10px; color: var(--gris); }
+.cmp .key span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: 0; }
+.cmp .key .a::before { background: #A9D5FF; }
+.cmp .key .b::before { background: var(--oscuro); }
+.cr { display: grid; grid-template-columns: 82px 1fr 64px; align-items: center; gap: 8px; font-size: 11.5px; line-height: 1.2; }
+.cr .nm { color: var(--oscuro); }
+.track { position: relative; height: 14px; }
+.track::before { content: ""; position: absolute; left: 0; right: 0; top: 6px; height: 2px; background: #E6ECF7; }
+.track .seg2 { position: absolute; top: 6px; height: 2px; background: #7FBDFF; }
+.track .d { position: absolute; top: 3px; width: 8px; height: 8px; border-radius: 50%; transform: translateX(-4px); }
+.track .d.a { background: #A9D5FF; }
+.track .d.b { background: var(--oscuro); }
+.cr .dv { text-align: right; font-weight: 600; white-space: nowrap; }
+.up { color: var(--azul); } .down { color: var(--rojo); } .eq { color: var(--gris); }
+.dist { display: flex; height: 10px; border-radius: 2px; overflow: hidden; }
+.foot { font-size: 10.5px; color: var(--gris); display: flex; justify-content: space-between; }
+
+.maplibregl-ctrl-group { border-radius: 4px; box-shadow: 0 4px 14px rgba(0,25,44,.12) !important; }
+.maplibregl-ctrl-attrib { font-size: 10px; }
+
+@media (max-width: 760px) {
+  .title .sub, .who span, .client { display: none; }
+  #panel { width: calc(100% - 32px); max-height: 46%; }
+  #count { display: none; }
+  #legend { bottom: 12px; right: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <div class="wordmark">ATENEO DEL DATO<small>DATOS PRECISOS</small></div>
+      <span class="cross" aria-hidden="true">×</span>
+      <span class="client">Frente Amplio</span>
+    </div>
+    <div class="title">
+      <h1 class="display">Mapa de prioridades</h1>
+      <span class="sub">Generales 29N · España</span>
+    </div>
+    <div class="who"><i class="dot" aria-hidden="true"></i><span id="who-txt">Rol: Ve todo</span></div>
+  </header>
+  <main>
+    <div id="map" role="region" aria-label="Mapa de prioridades"></div>
+
+    <aside id="panel" aria-label="Controles del mapa">
+      <div class="sec">
+        <span class="lbl">Nivel</span>
+        <div class="seg" role="group" aria-label="Nivel geográfico">
+          <button id="lv-ccaa" data-lv="ccaa" aria-pressed="false">CCAA</button>
+          <button id="lv-prov" data-lv="provincias" aria-pressed="true">Provincias</button>
+          <button id="lv-mun" data-lv="municipios" aria-pressed="false">Municipios</button>
+          <button id="lv-sscc" data-lv="secciones" aria-pressed="false">Secciones</button>
+        </div>
+        <p class="hint" id="lv-hint"></p>
+        <div id="focus-bar" hidden><div><span class="lbl" id="focus-type">Provincia</span><b id="focus-name"></b></div><button type="button" id="focus-exit">Volver a España</button></div>
+      </div>
+      <div class="sec">
+        <label class="lbl" for="sel-ccaa">Comunidad</label>
+        <select id="sel-ccaa"></select>
+        <label class="lbl" for="q">Buscar municipio</label>
+        <div class="searchwrap">
+          <input id="q" type="search" placeholder="Ej. Getafe, Vigo, Elche…" autocomplete="off">
+          <div id="results" role="listbox" aria-label="Resultados"></div>
+        </div>
+      </div>
+      <div class="sec" id="sec-filter">
+        <span class="lbl">Prioridad</span>
+        <div class="chips" id="chips"></div>
+      </div>
+      <div class="sec">
+        <button class="btn" id="dl" type="button">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 1.5v8M3.8 6.4 7 9.6l3.2-3.2M1.8 12.5h10.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span id="dl-txt">Descargar CSV</span>
+        </button>
+        <p class="hint" id="dl-hint"></p>
+      </div>
+      <div class="sec">
+        <span class="lbl">Tu acceso</span>
+        <p class="hint" id="me-txt">—</p>
+        <a class="hint" href="/cdn-cgi/access/logout">Cerrar sesión</a>
+      </div>
+    </aside>
+
+    <div id="legend" aria-live="polite"></div>
+    <div id="count" class="num"></div>
+    <div id="status" role="status"></div>
+    <div id="fatal" role="alert"><div><b>Sin acceso</b><p id="fatal-txt" class="hint"></p><a class="hint" href="/cdn-cgi/access/logout">Entrar con otro email</a></div></div>
+  </main>
+</div>
+
+<script>
+"use strict";
+// ── Escala de prioridad (manual 2026): azul oscuro para Máxima, luego azules separados de la escala ──
+const PRIOS = ["Máxima", "Alta", "Media", "Baja", "Nula", "Sin datos"];
+const P_COLOR = ["#00192C", "#0033FF", "#56A3FF", "#A9D5FF", "#D3D4CF", "#FFFFFF"];   // G3 A1 A4 A6 G1 blanco
+const P_TEXT  = ["#FFFFFF", "#FFFFFF", "#00192C", "#00192C", "#00192C", "#6C6D6D"];
+const pct = v => v == null ? "—" : f1(v * 100) + " %";
+const LV_HINT = {
+  ccaa: "Scoring final medio de la comunidad (ponderado por censo). Niveles repartidos entre las 19 comunidades.",
+  provincias: "Prioridad del comité según el modelo de escaños. Pincha en una para ver sus secciones censales.",
+  municipios: "Índice municipal: scoring medio de sus secciones × tamaño (log del censo).",
+  secciones: "Se cargan por provincia al acercar el mapa (zoom de provincia o más)."
+};
+const fmtN = new Intl.NumberFormat("es-ES", { useGrouping: "always" });
+const f1 = v => v == null ? "—" : v.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const PAD = () => (innerWidth < 760 ? { top: 20, bottom: 20, left: 20, right: 20 } : { top: 40, bottom: 40, left: 330, right: 60 });
+
+// ── Estado ────────────────────────────────────────────────────────
+const S = {
+  level: "provincias", focus: null, meta: null, roles: null, role: "nacional", allowed: null,
+  filters: new Set([0, 1, 2, 3, 4, 5]),
+  terr: null, mun: null, munFC: null, prov: null, ccaa: null,
+  sscc: new Map(), ssccLoading: new Map(), cpro2cca: {}, provBBox: {}, ccaaBBox: {}
+};
+let map;
+
+// En producción estas rutas apuntan al Worker (/api/...), que filtra por rol.
+const API = {
+  meta: "data/meta.json", me: "/api/me", terr: "data/territorios.json",
+  mun: "data/municipios.json", munGeo: "geo/municipios.topo.json",
+  prov: "geo/provincias.json", ccaa: "geo/ccaa.json",
+  ssccData: c => `data/sscc/${c}.json`, ssccGeo: c => `geo/sscc/${c}.topo.json`
+};
+const getJSON = async u => { const r = await fetch(u); if (!r.ok) throw new Error(`${r.status} ${u}`); return r.json(); };
+const rowObj = (cols, row) => { const o = {}; cols.forEach((c, i) => o[c] = row[i]); return o; };
+const status = (t, ms) => { const el = document.getElementById("status"); el.textContent = t; el.style.display = t ? "block" : "none"; if (ms) setTimeout(() => { if (el.textContent === t) el.style.display = "none"; }, ms); };
+function fatal(msg) { status(""); document.getElementById("fatal-txt").textContent = msg; document.getElementById("fatal").style.display = "flex"; }
+const isAllowed = cca => !S.allowed || S.allowed.has(cca);
+const ccaaName = c => S.meta.ccaa.find(x => x.cca === c)?.name ?? "";
+const EMPTY = { type: "FeatureCollection", features: [] };
+const prioColor = ["match", ["get", "_p"], 0, P_COLOR[0], 1, P_COLOR[1], 2, P_COLOR[2], 3, P_COLOR[3], 4, P_COLOR[4], P_COLOR[5]];
+
+function bboxOf(geom) {
+  let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
+  const walk = c => { if (typeof c[0] === "number") { x0 = Math.min(x0, c[0]); y0 = Math.min(y0, c[1]); x1 = Math.max(x1, c[0]); y1 = Math.max(y1, c[1]); } else c.forEach(walk); };
+  walk(geom.coordinates); return [x0, y0, x1, y1];
+}
+const unionB = bs => bs.reduce((a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])]);
+const fit = (bb, opts = {}) => map.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: PAD(), duration: 800, ...opts });
+const popPad = () => (innerWidth < 760 ? PAD() : { ...PAD(), right: 380 });
+const homeBB = () => S.allowed ? unionB([...S.allowed].map(c => S.ccaaBBox[c])) : [-9.6, 35.8, 4.5, 43.9];
+
+// Velo: un rectángulo que cubre todo con la zona enfocada como agujero
+function veilFor(geom) {
+  const outer = [[-40, 15], [25, 15], [25, 55], [-40, 55], [-40, 15]];
+  const holes = geom.type === "Polygon" ? [geom.coordinates[0]] : geom.coordinates.map(p => p[0]);
+  return { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [outer, ...holes] } }] };
+}
+
+// ── Arranque ──────────────────────────────────────────────────────
+async function init() {
+  status("Cargando datos…");
+  const meR = await fetch(API.me);
+  if (!meR.ok) return fatal(meR.status === 403 ? await meR.text() : "No se ha podido comprobar tu sesión. Recarga la página.");
+  S.me = await meR.json();
+  const [meta, terr, prov, ccaa] = await Promise.all([getJSON(API.meta), getJSON(API.terr), getJSON(API.prov), getJSON(API.ccaa)]);
+  Object.assign(S, { meta, terr, prov, ccaa });
+  meta.ccaa.forEach(c => c.provincias.forEach(p => S.cpro2cca[p] = c.cca));
+  const iP = terr.cols.indexOf("pidx");
+  prov.features.forEach(f => { const p = f.properties, t = terr.provincias[p.CPRO] || terr.provincias[p.CPRO]; f.properties = { _id: p.CPRO, _cca: p.CCA, _p: t ? t[iP] : 5 }; S.provBBox[p.CPRO] = bboxOf(f.geometry); });
+  ccaa.features.forEach(f => { const p = f.properties, t = terr.ccaa[p.CCA]; f.properties = { _id: p.CCA, _cca: p.CCA, _p: t ? t[iP] : 5 }; S.ccaaBBox[p.CCA] = bboxOf(f.geometry); });
+
+  map = new maplibregl.Map({
+    container: "map",
+    style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#EEF2F8" } }] },
+    bounds: [[-9.6, 35.8], [4.5, 43.9]], fitBoundsOptions: { padding: PAD() },
+    maxBounds: [[-22, 25], [9, 46.5]], minZoom: 4, maxZoom: 15, attributionControl: false
+  });
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+  map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "Secciones y límites: INE · Datos: Ateneo del Dato" }));
+  await new Promise(r => map.on("load", r));
+  buildLayers();
+  bindUI();
+  applyRole(S.me);
+  setLevel("provincias");
+  status("");
+  loadMunicipios();   // en segundo plano: buscador y nivel municipal
+}
+
+function buildLayers() {
+  for (const s of ["ccaa", "prov"]) map.addSource(s, { type: "geojson", data: S[s], promoteId: "_id" });
+  for (const s of ["mun", "sscc", "veil", "focus"]) map.addSource(s, { type: "geojson", data: EMPTY, promoteId: s === "veil" || s === "focus" ? undefined : "_id" });
+
+  const hoverLine = w => ["case", ["boolean", ["feature-state", "hover"], false], w, 0];
+  const vis = { visibility: "none" };
+
+  map.addLayer({ id: "land", type: "fill", source: "ccaa", paint: { "fill-color": "#FFFFFF" } });
+  map.addLayer({ id: "ccaa-fill", type: "fill", source: "ccaa", paint: { "fill-color": prioColor }, layout: vis });
+  map.addLayer({ id: "prov-fill", type: "fill", source: "prov", paint: { "fill-color": prioColor }, layout: vis });
+  map.addLayer({ id: "mun-fill", type: "fill", source: "mun", paint: { "fill-color": prioColor }, layout: vis });
+  map.addLayer({ id: "mun-line", type: "line", source: "mun", paint: { "line-color": "#FFFFFF", "line-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.35, 9, 0.85], "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.3, 9, 1, 12, 1.6] }, layout: vis });
+  map.addLayer({ id: "sscc-fill", type: "fill", source: "sscc", paint: { "fill-color": prioColor }, layout: vis });
+  map.addLayer({ id: "sscc-line", type: "line", source: "sscc", paint: { "line-color": "#FFFFFF", "line-opacity": ["interpolate", ["linear"], ["zoom"], 7, 0.25, 12, 0.7], "line-width": ["interpolate", ["linear"], ["zoom"], 7, 0.2, 12, 0.8] }, layout: vis });
+  map.addLayer({ id: "mask", type: "fill", source: "ccaa", paint: { "fill-color": "#E3E8F0", "fill-opacity": 1 }, filter: ["boolean", false] });
+  map.addLayer({ id: "prov-line", type: "line", source: "prov", paint: { "line-color": "#00192C", "line-opacity": 0.5, "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.6, 10, 1.2] } });
+  map.addLayer({ id: "ccaa-line", type: "line", source: "ccaa", paint: { "line-color": "#00192C", "line-width": ["interpolate", ["linear"], ["zoom"], 5, 1.1, 10, 2.2] } });
+  // Foco: velo blanco alrededor y contorno marcado
+  map.addLayer({ id: "veil", type: "fill", source: "veil", paint: { "fill-color": "#FFFFFF", "fill-opacity": 0.82 } });
+  map.addLayer({ id: "focus-halo", type: "line", source: "focus", paint: { "line-color": "#FFFFFF", "line-width": 7, "line-opacity": 0.9 } });
+  map.addLayer({ id: "focus-line", type: "line", source: "focus", paint: { "line-color": "#00192C", "line-width": 3 } });
+  for (const s of ["mun", "sscc", "prov", "ccaa"]) {
+    map.addLayer({ id: `${s}-hover`, type: "line", source: s, paint: { "line-color": "#0033FF", "line-width": hoverLine(2.6) }, layout: vis });
+  }
+
+  // Hover sobre la capa activa
+  let hov = null;
+  const clearHov = () => { if (hov) map.setFeatureState(hov, { hover: false }); hov = null; map.getCanvas().style.cursor = ""; };
+  map.on("mousemove", e => {
+    const f = pickFeature(e.point);
+    if (!f) return clearHov();
+    if (hov && hov.source === f.source && hov.id === f.id) return;
+    clearHov(); hov = { source: f.source, id: f.id };
+    map.setFeatureState(hov, { hover: true }); map.getCanvas().style.cursor = "pointer";
+  });
+  map.on("mouseout", clearHov);
+  map.on("click", e => onClick(e));
+  map.on("moveend", () => { if (S.level === "secciones" && !S.focus) ensureSecciones(); });
+}
+
+// Qué hay bajo el cursor, según el modo
+function pickFeature(pt) {
+  let layers;
+  const fv = S.focusView === "municipios" ? "mun-fill" : "sscc-fill";
+  if (S.focus) layers = [fv, "prov-fill"];
+  else layers = { ccaa: ["ccaa-fill"], provincias: ["prov-fill"], municipios: ["mun-fill"], secciones: ["sscc-fill"] }[S.level];
+  const fs = map.queryRenderedFeatures(pt, { layers }).filter(f => isAllowed(f.properties._cca));
+  if (!fs.length) return null;
+  if (S.focus) {
+    const sec = fs.find(f => f.layer.id === fv && f.properties._cpro === S.focus.cpro);
+    if (sec) return sec;
+    const pv = fs.find(f => f.layer.id === "prov-fill" && f.properties._id !== S.focus.cpro);
+    return pv || null;
+  }
+  return fs[0];
+}
+function onClick(e) {
+  const f = pickFeature(e.point); if (!f) return;
+  const id = f.properties._id;
+  if (f.layer.id === "prov-fill") return focusProvince(id, e.lngLat);
+  const src = { "ccaa-fill": "ccaa", "mun-fill": "mun", "sscc-fill": "sscc" }[f.layer.id];
+  openPopup(src, id, e.lngLat);
+}
+
+// ── Carga de datos ────────────────────────────────────────────────
+let munReady = null;
+function loadMunicipios() {
+  munReady = munReady || (async () => {
+    const [mun, topo] = await Promise.all([getJSON(API.mun), getJSON(API.munGeo)]);
+    S.mun = mun;
+    const fc = topojson.feature(topo, topo.objects[Object.keys(topo.objects)[0]]);
+    const iP = mun.cols.indexOf("pidx");
+    fc.features.forEach(f => { const p = f.properties, row = mun.rows[p.CUMUN]; f.properties = { _id: p.CUMUN, _cca: p.CCA, _cpro: p.CUMUN.slice(0, 2), _p: row ? row[iP] : 5 }; });
+    S.munFC = fc;
+    map.getSource("mun").setData(fc);
+    buildSearch(); updateCounts();
+  })();
+  return munReady;
+}
+function loadProvSscc(c) {
+  if (S.sscc.has(c)) return Promise.resolve();
+  if (!S.ssccLoading.has(c)) S.ssccLoading.set(c, (async () => {
+    const [data, topo] = await Promise.all([getJSON(API.ssccData(c)), getJSON(API.ssccGeo(c))]);
+    const fc = topojson.feature(topo, topo.objects[Object.keys(topo.objects)[0]]);
+    const iP = data.cols.indexOf("pidx"), cca = S.cpro2cca[c];
+    fc.features.forEach(f => { const id = f.properties.CUSEC, row = data.rows[id]; f.properties = { _id: id, _cca: cca, _cpro: c, _mun: id.slice(0, 5), _p: row ? row[iP] : 5 }; });
+    S.sscc.set(c, { fc, data }); S.ssccLoading.delete(c);
+  })());
+  return S.ssccLoading.get(c);
+}
+async function ensureSecciones() {
+  if (map.getZoom() < 8) { status("Acerca el mapa a una provincia para ver sus secciones censales", 3500); return; }
+  const b = map.getBounds(), vb = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+  const need = Object.entries(S.provBBox)
+    .filter(([c, bb]) => bb[0] < vb[2] && bb[2] > vb[0] && bb[1] < vb[3] && bb[3] > vb[1])
+    .map(([c]) => c).filter(c => isAllowed(S.cpro2cca[c]) && !S.sscc.has(c));
+  if (!need.length) return;
+  status(`Cargando secciones de ${need.map(c => S.meta.provincias[c]).join(", ")}…`);
+  await Promise.all(need.map(loadProvSscc));
+  pushSscc(); status("");
+}
+function pushSscc() {
+  const feats = [];
+  for (const [c, v] of S.sscc) if (isAllowed(S.cpro2cca[c])) feats.push(...v.fc.features);
+  map.getSource("sscc").setData({ type: "FeatureCollection", features: feats });
+  updateCounts();
+}
+
+// ── Niveles, foco, filtros y rol ──────────────────────────────────
+const ALL_LAYERS = ["ccaa-fill", "ccaa-hover", "prov-fill", "prov-hover", "mun-fill", "mun-line", "mun-hover", "sscc-fill", "sscc-line", "sscc-hover"];
+const LAYERS = {
+  ccaa: ["ccaa-fill", "ccaa-hover"], provincias: ["prov-fill", "prov-hover"],
+  municipios: ["mun-fill", "mun-line", "mun-hover"], secciones: ["sscc-fill", "sscc-line", "sscc-hover"],
+  foco_secciones: ["prov-fill", "prov-hover", "sscc-fill", "sscc-line", "sscc-hover"],
+  foco_municipios: ["prov-fill", "prov-hover", "mun-fill", "mun-line", "mun-hover"]
+};
+function showLayers(key) { const on = new Set(LAYERS[key]); ALL_LAYERS.forEach(id => map.setLayoutProperty(id, "visibility", on.has(id) ? "visible" : "none")); }
+function pressLevel(lv) { document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lv === lv))); }
+
+async function setLevel(lv) {
+  if (S.focus && (lv === "municipios" || lv === "secciones")) return setFocusView(lv);
+  clearFocus(false);
+  S.level = lv; pressLevel(lv); showLayers(lv);
+  document.getElementById("lv-hint").textContent = LV_HINT[lv];
+  closePopup(); applyFilters(); renderLegend();
+  if (lv === "municipios" && !S.mun) { status("Cargando municipios…"); await loadMunicipios(); status(""); }
+  if (lv === "secciones") ensureSecciones();
+}
+
+// Foco en una provincia: secciones de esa provincia, el resto velado
+async function focusProvince(cpro, lngLat) {
+  if (!isAllowed(S.cpro2cca[cpro])) return;
+  closePopup();
+  const f = S.prov.features.find(x => x.properties._id === cpro);
+  setFocus({ type: "prov", cpro, id: cpro, geom: f.geometry, name: S.meta.provincias[cpro] });
+  const bb = S.provBBox[cpro];
+  fit(bb, { padding: popPad() });
+  status(`Cargando secciones de ${S.meta.provincias[cpro]}…`);
+  await loadProvSscc(cpro); pushSscc(); status("");
+  const open = () => { if (S.focus?.id === cpro) openPopup("prov", cpro, [bb[2], (bb[1] + bb[3]) / 2], "left"); };
+  map.isMoving() ? map.once("moveend", open) : open();
+}
+// Foco en un municipio: secciones de su provincia, velo fuera del término municipal
+async function focusMunicipio(cumun) {
+  await loadMunicipios();
+  const f = S.munFC.features.find(x => x.properties._id === cumun); if (!f) return;
+  const cpro = cumun.slice(0, 2), bb = bboxOf(f.geometry);
+  closePopup();
+  setFocus({ type: "mun", cpro, id: cumun, geom: f.geometry, name: S.mun.rows[cumun][0] });
+  fit(bb, { maxZoom: 13, padding: popPad() });
+  status(`Cargando secciones de ${S.meta.provincias[cpro]}…`);
+  await loadProvSscc(cpro); pushSscc(); status("");
+  const open = () => { if (S.focus?.id === cumun) openPopup("mun", cumun, [bb[2], (bb[1] + bb[3]) / 2], "left"); };
+  map.isMoving() ? map.once("moveend", open) : open();
+}
+const FOCUS_HINT = {
+  prov: { secciones: "Secciones censales de la provincia. Cambia a Municipios para verla por municipio.", municipios: "Municipios de la provincia. Cambia a Secciones para más detalle." },
+  mun: { secciones: "Secciones censales del municipio y su entorno.", municipios: "El municipio y los de su provincia." }
+};
+async function setFocusView(v) {
+  S.focusView = v;
+  if (v === "municipios" && !S.mun) { status("Cargando municipios…"); await loadMunicipios(); status(""); }
+  showLayers("foco_" + v); pressLevel(v);
+  document.getElementById("lv-hint").textContent = FOCUS_HINT[S.focus.type][v];
+  applyFilters(); renderLegend();
+}
+function setFocus(fc) {
+  S.focus = fc;
+  map.setPaintProperty("prov-fill", "fill-color", "#FFFFFF");
+  map.removeFeatureState({ source: "prov" });
+  map.getSource("veil").setData(veilFor(fc.geom));
+  map.getSource("focus").setData({ type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: fc.geom }] });
+  S.focusView = S.focusView || "secciones";
+  const bar = document.getElementById("focus-bar");
+  document.getElementById("focus-type").textContent = fc.type === "prov" ? "Provincia" : `Municipio · ${S.meta.provincias[fc.cpro]}`;
+  document.getElementById("focus-name").textContent = fc.name;
+  bar.hidden = false;
+  setFocusView(S.focusView);
+}
+function clearFocus(restore = true) {
+  if (!S.focus) return;
+  S.focus = null;
+  map.setPaintProperty("prov-fill", "fill-color", prioColor);
+  map.getSource("veil").setData(EMPTY); map.getSource("focus").setData(EMPTY);
+  document.getElementById("focus-bar").hidden = true;
+  if (restore) { closePopup(); setLevel("provincias"); fit(homeBB()); }
+}
+
+function applyFilters() {
+  const roleF = S.allowed ? ["in", ["get", "_cca"], ["literal", [...S.allowed]]] : true;
+  const prioF = ["in", ["get", "_p"], ["literal", [...S.filters]]];
+  const focusF = S.focus ? ["==", ["get", "_cpro"], S.focus.cpro] : true;
+  for (const id of ["mun-fill", "mun-line"]) map.setFilter(id, ["all", roleF, prioF, focusF]);
+  for (const id of ["sscc-fill", "sscc-line"]) map.setFilter(id, ["all", roleF, prioF, focusF]);
+  for (const id of ["ccaa-fill", "prov-fill"]) map.setFilter(id, ["all", roleF]);
+  map.setFilter("mask", S.allowed ? ["!", ["in", ["get", "_cca"], ["literal", [...S.allowed]]]] : ["boolean", false]);
+  updateCounts();
+}
+function applyRole(me) {
+  S.role = me.rol;
+  S.allowed = me.ccaa === "*" ? null : new Set(me.ccaa);
+  document.getElementById("who-txt").textContent = me.email;
+  document.getElementById("me-txt").textContent = `${me.email} · ${me.nombre}`;
+  const sel = document.getElementById("sel-ccaa");
+  const list = S.meta.ccaa.filter(c => isAllowed(c.cca));
+  sel.innerHTML = (S.allowed && list.length === 1 ? "" : `<option value="">${S.allowed ? "Todas mis comunidades" : "Toda España"}</option>`) +
+    list.map(c => `<option value="${c.cca}">${c.name}</option>`).join("");
+  if (S.focus && !isAllowed(S.cpro2cca[S.focus.cpro])) clearFocus(false);
+  pushSscc(); applyFilters(); buildSearch(); closePopup(); renderLegend();
+  fit(homeBB(), { duration: 700 });
+}
+
+// ── Recuentos, chips y leyenda ────────────────────────────────────
+function levelRows() {
+  if (S.focus && S.focusView === "municipios") {
+    if (!S.mun) return [];
+    const iP = S.mun.cols.indexOf("pidx"), iC = S.mun.cols.indexOf("cpro");
+    return Object.values(S.mun.rows).filter(r => r[iC] === S.focus.cpro).map(r => r[iP]);
+  }
+  if (S.focus) {
+    const v = S.sscc.get(S.focus.cpro); if (!v) return [];
+    const iP = v.data.cols.indexOf("pidx"), iM = v.data.cols.indexOf("cumun");
+    return Object.values(v.data.rows).filter(r => S.focus.type === "prov" || r[iM] === S.focus.id).map(r => r[iP]);
+  }
+  if (S.level === "municipios" && S.mun) {
+    const iP = S.mun.cols.indexOf("pidx"), iC = S.mun.cols.indexOf("cpro");
+    return Object.values(S.mun.rows).filter(r => isAllowed(S.cpro2cca[r[iC]])).map(r => r[iP]);
+  }
+  if (S.level === "secciones") {
+    const out = [];
+    for (const [c, v] of S.sscc) if (isAllowed(S.cpro2cca[c])) { const iP = v.data.cols.indexOf("pidx"); for (const r of Object.values(v.data.rows)) out.push(r[iP]); }
+    return out;
+  }
+  const iP = S.terr.cols.indexOf("pidx");
+  if (S.level === "provincias") return Object.entries(S.terr.provincias).filter(([c]) => isAllowed(S.cpro2cca[c])).map(([, r]) => r[iP]);
+  return Object.entries(S.terr.ccaa).filter(([c]) => isAllowed(c)).map(([, r]) => r[iP]);
+}
+function updateCounts() {
+  if (!S.terr) return;
+  const ps = levelRows(), cnt = [0, 0, 0, 0, 0, 0]; ps.forEach(p => cnt[p ?? 5]++);
+  const filterable = !!S.focus || S.level === "municipios" || S.level === "secciones";
+  document.getElementById("sec-filter").style.display = filterable ? "" : "none";
+  const chips = document.getElementById("chips");
+  chips.innerHTML = PRIOS.map((p, i) => i === 5 && !cnt[5] ? "" : `<button class="chip" data-i="${i}" aria-pressed="${S.filters.has(i)}"><span class="sw" style="background:${P_COLOR[i]}"></span><span>${p}</span><span class="n num">${fmtN.format(cnt[i])}</span></button>`).join("");
+  chips.querySelectorAll(".chip").forEach(b => b.onclick = () => {
+    const i = +b.dataset.i;
+    if (S.filters.has(i)) { if (S.filters.size > 1) S.filters.delete(i); } else S.filters.add(i);
+    applyFilters();
+  });
+  const unit = S.focus ? (S.focusView === "municipios" ? `municipios de ${S.meta.provincias[S.focus.cpro]}` : `secciones de ${S.focus.name}`) :
+    { municipios: "municipios", secciones: "secciones cargadas", provincias: "provincias", ccaa: "comunidades" }[S.level];
+  const vis = filterable ? ps.filter(p => S.filters.has(p ?? 5)).length : ps.length;
+  document.getElementById("count").textContent = vis === ps.length ? `${fmtN.format(ps.length)} ${unit}` : `${fmtN.format(vis)} de ${fmtN.format(ps.length)} ${unit}`;
+  document.getElementById("dl-hint").textContent = S.focus ? (S.focusView === "municipios" ? `Exporta los municipios de ${S.meta.provincias[S.focus.cpro]} con las prioridades activas.` : `Exporta las secciones de ${S.focus.name} con las prioridades activas.`)
+    : S.level === "secciones" ? "Incluye todas las secciones de tus comunidades, no solo las cargadas." : "Exporta lo que ves: nivel, comunidades del rol y prioridades activas.";
+}
+function renderLegend() {
+  const el = document.getElementById("legend");
+  const lv = S.focus ? S.focusView : S.level;
+  if (lv === "provincias") {
+    const cnt = [0, 0, 0, 0, 0]; Object.values(S.terr.provincias).forEach(r => cnt[r[2]]++);
+    el.innerHTML = `<span class="lbl">Prioridad provincial</span><div class="rows">${S.meta.niveles_provincia.map((p, i) => `<div class="row"><span class="sw" style="background:${P_COLOR[i]}"></span><span style="flex:1">${p}</span><span class="num" style="color:var(--gris);font-size:11px">${cnt[i]} · ×${S.meta.pesos_provincia[i].toFixed(2).replace(".", ",")}</span></div>`).join("")}</div><p class="note">Máxima: decisión del comité. Alta: escaño en el filo en el modelo del 18/10. Media y Baja: su siguiente escaño entra con FA ≤ 9 % o ≤ 13 % nacional. El peso multiplica el scoring de sus secciones.</p>`;
+  } else {
+    const u = S.meta[{ secciones: "umbrales_seccion", municipios: "umbrales_municipio", ccaa: "umbrales_ccaa" }[lv]];
+    const rng = ["≥ " + f1(u["Máxima"]), f1(u["Alta"]) + "–" + f1(u["Máxima"]), f1(u["Media"]) + "–" + f1(u["Alta"]), f1(u["Baja"]) + "–" + f1(u["Media"]), "< " + f1(u["Baja"])];
+    const title = { secciones: "Prioridad de la sección", municipios: "Prioridad municipal", ccaa: "Prioridad autonómica" }[lv];
+    const note = { secciones: "Scoring final = scoring de la sección × peso de su provincia. Reparto 10/10/20/30/30 % en España.",
+      municipios: "Índice 0–10 = scoring medio × log del censo. Reparto 10/10/20/30/30 % entre municipios.",
+      ccaa: "Scoring final medio ponderado por censo. Reparto entre las 19 comunidades." }[lv];
+    el.innerHTML = `<span class="lbl">${title}</span><div class="rows">${PRIOS.slice(0, 5).map((p, i) => `<div class="row"><span class="sw" style="background:${P_COLOR[i]}"></span><span style="flex:1">${p}</span><span class="num" style="color:var(--gris);font-size:11px">${rng[i]}</span></div>`).join("")}</div><p class="note">${note}</p>`;
+  }
+  if (S.allowed) el.innerHTML += `<div class="row" style="font-size:11px;color:var(--gris)"><span class="sw" style="background:#E3E8F0"></span>Fuera de tu rol</div>`;
+}
+
+// ── Popup ─────────────────────────────────────────────────────────
+let popup = null;
+function closePopup() { if (popup) { popup.remove(); popup = null; } }
+function recordFor(src, id) {
+  if (src === "mun") { const r = S.mun.rows[id]; return r && { ...rowObj(S.mun.cols, r), tipo: "Municipio", loc: `${S.meta.provincias[id.slice(0, 2)]} · ${ccaaName(S.cpro2cca[id.slice(0, 2)])}` }; }
+  if (src === "sscc") {
+    const c = id.slice(0, 2), v = S.sscc.get(c), r = v && v.data.rows[id];
+    if (!r) return { tipo: "Sección censal", name: S.mun?.rows[id.slice(0, 5)]?.[0] ?? id, code: `Distrito ${id.slice(5, 7)} · Sección ${id.slice(7)}`, loc: S.meta.provincias[c], missing: true };
+    const o = rowObj(v.data.cols, r), m = S.mun?.rows[o.cumun];
+    return { ...o, peso: v.data.peso, tipo: "Sección censal", name: m ? m[0] : o.cumun, code: `Distrito ${id.slice(5, 7)} · Sección ${id.slice(7)}`, loc: `${S.meta.provincias[c]} · ${ccaaName(S.cpro2cca[c])}` };
+  }
+  if (src === "prov") { const r = S.terr.provincias[id]; return { ...rowObj(S.terr.cols, r), m: r[r.length - 1], tipo: "Provincia", loc: ccaaName(S.cpro2cca[id]) }; }
+  if (src === "ccaa") { const r = S.terr.ccaa[id]; return { ...rowObj(S.terr.cols, r), tipo: "Comunidad autónoma", loc: `${S.meta.ccaa.find(c => c.cca === id).provincias.length} provincias` }; }
+}
+function openPopup(src, id, lngLat, anchor) {
+  const d = recordFor(src, id); if (!d) return;
+  closePopup();
+  popup = new maplibregl.Popup({ maxWidth: "320px", offset: 10, focusAfterOpen: false, ...(anchor && innerWidth >= 760 ? { anchor } : {}) }).setLngLat(lngLat).setHTML(popupHTML(src, d)).addTo(map);
+}
+function delta(a, b) {
+  if (a == null || b == null) return `<span class="eq">—</span>`;
+  const d = b - a, s = Math.abs(d) < 0.05 ? "eq" : d > 0 ? "up" : "down";
+  return `<span class="${s}">${d > 0 ? "+" : d < 0 ? "−" : ""}${f1(Math.abs(d))} pp</span>`;
+}
+function cmpRow(name, a, b) {
+  const pos = v => `${Math.min(100, Math.max(0, v ?? 0))}%`;
+  const lo = Math.min(a ?? 0, b ?? 0), hi = Math.max(a ?? 0, b ?? 0);
+  return `<div class="cr"><span class="nm">${name}</span><span class="track"><span class="seg2" style="left:${pos(lo)};width:calc(${pos(hi)} - ${pos(lo)})"></span><i class="d a" style="left:${pos(a)}"></i><i class="d b" style="left:${pos(b)}"></i></span><span class="dv num">${delta(a, b)}</span></div>`;
+}
+function popupHTML(src, d) {
+  const head = `<div class="pp-h"><span class="t">${d.tipo}</span><span class="n">${d.name}</span><span class="loc">${d.code ? d.code + " · " : ""}${d.loc ?? ""}</span></div>`;
+  if (d.missing) return `<div class="pp">${head}<div class="pp-b"><p class="hint">Esta sección existe en la cartografía de 2019 pero no en los datos de 2023 (el INE la dividió o renumeró). En producción se usará la cartografía de 2023.</p></div></div>`;
+  const pi = d.pidx ?? 5, agg = src !== "sscc";
+  const lab = src === "prov" ? S.meta.niveles_provincia[pi] : PRIOS[pi];
+  const sLab = { sscc: "Scoring final", mun: "Índice municipal", prov: "Scoring final medio", ccaa: "Scoring final medio" }[src];
+  let prio = `<div class="prio"><span class="pill" style="background:${P_COLOR[pi]};color:${P_TEXT[pi]};${pi === 5 ? "border:1px solid #D3D4CF" : ""}">${lab}</span>
+      <div class="score"><div class="top"><span>${sLab}</span><b class="num">${d.score == null ? "—" : f1(d.score) + " / 10"}</b></div><div class="bar"><i style="width:${(d.score ?? 0) * 10}%;background:${pi >= 3 ? "#56A3FF" : P_COLOR[pi]}"></i></div></div></div>`;
+  if (src === "sscc" && d.score_orig != null) prio += `<p class="hint">Scoring de la sección ${f1(d.score_orig)} × peso provincial ${d.peso.toFixed(2).replace(".", ",")}</p>`;
+  if (src === "mun") prio += `<p class="hint">Scoring medio de sus secciones <b>${f1(d.score_medio)}</b> × tamaño (${d.censo23 == null ? "—" : fmtN.format(d.censo23)} electores)</p>`;
+  if (src === "prov" && d.m) {
+    const m = d.m;
+    prio += `<div class="k">
+      <div><span class="l">Escaños</span><span class="v num">${m.escanos ?? "—"}</span></div>
+      <div><span class="l">Sumar 23J</span><span class="v num">${m.esc23 ?? "—"}</span></div>
+      <div><span class="l">FA (base)</span><span class="v num">${m.esc_fa ?? "—"}</span></div>
+      <div><span class="l">FA estimado</span><span class="v num">${pct(m.fa_est)}</span></div>
+      <div><span class="l">En el filo</span><span class="v num">${pct(m.p_filo)}</span></div>
+      <div><span class="l">Rival</span><span class="v">${m.rival ?? "—"}</span></div>
+    </div><p class="hint">Modelo de escaños: <b>${m.categoria_modelo}</b>${m.fa_nac_sig ? ` · el siguiente escaño entra con FA al ${f1(m.fa_nac_sig * 100)} % nacional` : ""}. Peso ×${m.peso.toFixed(2).replace(".", ",")}.</p>`;
+  }
+  if (agg && d.dist) {
+    const tot = d.dist.reduce((a, b) => a + b, 0) || 1;
+    prio += `<div style="display:flex;flex-direction:column;gap:4px"><div class="dist">${d.dist.map((n, i) => n ? `<span title="${PRIOS[i]}: ${fmtN.format(n)}" style="width:${n / tot * 100}%;background:${P_COLOR[i]}"></span>` : "").join("")}</div>
+      <div class="foot"><span>${fmtN.format(d.n)} secciones</span><span>${f1(d.pct_prior)} % del censo en Máxima o Alta</span></div></div>`;
+  }
+  const k23 = `<div class="k">
+      <div><span class="l">1.º en 2023</span><span class="v">${d.v23 ?? "—"}</span></div>
+      <div><span class="l">Censo</span><span class="v num">${d.censo23 == null ? "—" : fmtN.format(d.censo23)}</span></div>
+      <div><span class="l">Particip.</span><span class="v num">${d.part23 == null ? "—" : f1(d.part23) + " %"}</span></div>
+      <div><span class="l">Sumar</span><span class="v num">${d.sumar23 == null ? "—" : f1(d.sumar23) + " %"}</span></div>
+      <div><span class="l">PSOE</span><span class="v num">${d.psoe23 == null ? "—" : f1(d.psoe23) + " %"}</span></div>
+      <div><span class="l">Derechas</span><span class="v num">${d.dcha23 == null ? "—" : f1(d.dcha23) + " %"}</span></div>
+    </div>`;
+  const nac = (d.izqnac23 ?? 0) > 0.5 || (d.izqnac19 ?? 0) > 0.5;
+  const cmp = `<div class="cmp"><div class="hd"><span class="lbl">2019 → 2023</span><span class="key"><span class="a">2019</span><span class="b">2023</span></span></div>
+      ${cmpRow("Participación", d.part19, d.part23)}
+      ${cmpRow("Sumar / UP", d.sumar19, d.sumar23)}
+      ${cmpRow("PSOE", d.psoe19, d.psoe23)}
+      ${nac ? cmpRow("Izq. nacional.", d.izqnac19, d.izqnac23) : ""}
+      ${cmpRow("Derechas", d.dcha19, d.dcha23)}
+      ${d.v19 && d.v19 !== d.v23 ? `<p class="hint">1.º en 2019: <b>${d.v19}</b></p>` : ""}</div>`;
+  return `<div class="pp">${head}<div class="pp-b">${prio}${k23}${cmp}</div></div>`;
+}
+
+// ── Buscador ──────────────────────────────────────────────────────
+let idx = [];
+function buildSearch() {
+  if (!S.mun) return;
+  const iC = S.mun.cols.indexOf("cpro");
+  idx = Object.entries(S.mun.rows).filter(([k, r]) => isAllowed(S.cpro2cca[r[iC]]))
+    .map(([k, r]) => ({ id: k, name: r[0], key: r[0].normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(), prov: S.meta.provincias[r[iC]] }));
+}
+function search(q) {
+  const box = document.getElementById("results");
+  const k = q.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  if (k.length < 2) { box.style.display = "none"; return; }
+  if (!S.mun) { box.innerHTML = `<p class="hint" style="padding:8px 10px">Cargando municipios…</p>`; box.style.display = "block"; loadMunicipios().then(() => search(document.getElementById("q").value)); return; }
+  const hits = idx.filter(m => m.key.includes(k)).sort((a, b) => (a.key.startsWith(k) ? 0 : 1) - (b.key.startsWith(k) ? 0 : 1) || a.name.localeCompare(b.name, "es")).slice(0, 8);
+  box.innerHTML = hits.length ? hits.map(h => `<button role="option" data-id="${h.id}"><span>${h.name}</span><span class="p">${h.prov}</span></button>`).join("") : `<p class="hint" style="padding:8px 10px">Ningún municipio coincide${S.allowed ? " dentro de tu rol" : ""}.</p>`;
+  box.style.display = "block";
+  box.querySelectorAll("button").forEach(b => b.onmousedown = e => { e.preventDefault(); goMun(b.dataset.id); });
+}
+function goMun(id) {
+  document.getElementById("results").style.display = "none";
+  document.getElementById("q").value = S.mun.rows[id][0];
+  focusMunicipio(id);
+}
+
+// ── Descarga ──────────────────────────────────────────────────────
+const csvCell = v => v == null ? "" : typeof v === "number" ? String(v).replace(".", ",") : /[;"\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : v;
+async function buildCSV() {
+  const lv = S.focus ? S.focusView : S.level, lines = [];
+  const VOTE = ["v23", "censo23", "part23", "sumar23", "psoe23", "izqnac23", "izqmin23", "dcha23", "otros23", "v19", "censo19", "part19", "sumar19", "psoe19", "izqnac19", "izqmin19", "dcha19", "otros19"];
+  const VH = ["1.º 2023", "Censo 2023", "% Particip. 2023", "% Sumar 2023", "% PSOE 2023", "% Izq. nacionalista 2023", "% Izq. minoritaria 2023", "% Derechas 2023", "% Otros 2023", "1.º 2019", "Censo 2019", "% Particip. 2019", "% Sumar/UP 2019", "% PSOE 2019", "% Izq. nacionalista 2019", "% Izq. minoritaria 2019", "% Derechas 2019", "% Otros 2019"];
+  if (lv === "secciones") {
+    await loadMunicipios();
+    const provs = S.focus ? [S.focus.cpro] : Object.keys(S.meta.provincias).filter(c => isAllowed(S.cpro2cca[c]));
+    status(`Preparando ${provs.length} provincia${provs.length > 1 ? "s" : ""}…`);
+    const datas = await Promise.all(provs.map(c => S.sscc.get(c)?.data ?? getJSON(API.ssccData(c))));
+    lines.push(["Sección", "Comunidad", "Provincia", "Municipio", "Scoring sección", "Peso provincial", "Scoring final", "Prioridad", ...VH].join(";"));
+    datas.forEach((data, i) => { const c = provs[i]; for (const [id, r] of Object.entries(data.rows)) { const o = rowObj(data.cols, r); if (!S.filters.has(o.pidx)) continue; if (S.focus?.type === "mun" && o.cumun !== S.focus.id) continue; lines.push([id, ccaaName(S.cpro2cca[c]), S.meta.provincias[c], S.mun.rows[o.cumun]?.[0] ?? "", o.score_orig, data.peso, o.score, PRIOS[o.pidx], ...VOTE.map(k => o[k])].map(csvCell).join(";")); } });
+  } else if (lv === "municipios") {
+    lines.push(["Cód. municipio", "Municipio", "Comunidad", "Provincia", "Índice municipal (0-10)", "Prioridad", "Scoring final medio", "Nº secciones", "% censo en Máxima/Alta", ...VH].join(";"));
+    for (const [id, r] of Object.entries(S.mun.rows)) { const o = rowObj(S.mun.cols, r); if (!isAllowed(S.cpro2cca[o.cpro]) || !S.filters.has(o.pidx) || (S.focus && o.cpro !== S.focus.cpro)) continue; lines.push([id, o.name, ccaaName(S.cpro2cca[o.cpro]), S.meta.provincias[o.cpro], o.score, PRIOS[o.pidx], o.score_medio, o.n, o.pct_prior, ...VOTE.map(k => o[k])].map(csvCell).join(";")); }
+  } else {
+    const isP = lv === "provincias", src = isP ? S.terr.provincias : S.terr.ccaa;
+    lines.push([isP ? "Cód. provincia" : "Cód. CCAA", isP ? "Provincia" : "Comunidad", "Scoring final medio", "Prioridad", "% censo en Máxima/Alta", "Secciones", ...PRIOS.map(p => `Secciones ${p}`), ...VH].join(";"));
+    for (const [id, r] of Object.entries(src)) { const o = rowObj(S.terr.cols, r), cca = isP ? S.cpro2cca[id] : id; if (!isAllowed(cca)) continue; lines.push([id, o.name, o.score, isP ? S.meta.niveles_provincia[o.pidx] : PRIOS[o.pidx], o.pct_prior, o.n, ...o.dist, ...VOTE.map(k => o[k])].map(csvCell).join(";")); }
+  }
+  status("");
+  return "﻿" + lines.join("\r\n");
+}
+async function download() {
+  const btn = document.getElementById("dl"), txt = document.getElementById("dl-txt");
+  btn.disabled = true;
+  try {
+    const csv = await buildCSV();
+    const n = csv.split("\r\n").length - 1;
+    const ambito = S.focus ? S.focus.name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\W+/g, "_").toLowerCase() : (S.role === "nacional" ? "espana" : S.role);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    a.download = `prioridades_${S.focus ? S.focusView : S.level}_${ambito}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    txt.textContent = `${fmtN.format(n)} filas descargadas`;
+  } catch (e) {
+    console.error(e); txt.textContent = "No se pudo descargar";
+  } finally { btn.disabled = false; setTimeout(() => txt.textContent = "Descargar CSV", 2600); }
+}
+
+// ── UI ────────────────────────────────────────────────────────────
+function bindUI() {
+  document.querySelectorAll(".seg button").forEach(b => b.onclick = () => { setLevel(b.dataset.lv); });
+  document.getElementById("focus-exit").onclick = () => clearFocus(true);
+  document.getElementById("sel-ccaa").onchange = e => { if (S.focus) clearFocus(false), setLevel(S.level); fit(e.target.value ? S.ccaaBBox[e.target.value] : homeBB()); };
+  const q = document.getElementById("q");
+  q.onfocus = () => loadMunicipios();
+  q.oninput = () => search(q.value);
+  q.onblur = () => setTimeout(() => document.getElementById("results").style.display = "none", 150);
+  q.onkeydown = e => { if (e.key === "Enter") { const b = document.querySelector("#results button"); if (b) goMun(b.dataset.id); } };
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && S.focus && document.activeElement !== q) clearFocus(true); });
+  document.getElementById("dl").onclick = download;
+}
+
+init().catch(e => { console.error(e); fatal("No se han podido cargar los datos. Recarga la página."); });
+</script>
+</body>
+</html>

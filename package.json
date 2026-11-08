@@ -1,0 +1,14 @@
+{
+  "name": "mapas-fa-29n",
+  "private": true,
+  "description": "Mapa de prioridades FA · Generales 29N · Ateneo del Dato",
+  "scripts": {
+    "dev": "wrangler pages dev public --binding DEV_EMAIL=dev@ateneodeldato.com",
+    "datos": "python3 pipeline/build_data.py",
+    "excel": "python3 pipeline/build_excel.py",
+    "geo": "bash pipeline/build_geo.sh"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

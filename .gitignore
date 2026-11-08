@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+salida/
+.dev.vars
+__pycache__/
+*.pyc
