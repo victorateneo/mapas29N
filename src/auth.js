@@ -2,8 +2,8 @@
 // Cloudflare Access protege todo el dominio y añade a cada petición un JWT firmado
 // (cabecera Cf-Access-Jwt-Assertion). Aquí se verifica la firma y se saca el email;
 // con el email se busca el rol en config/roles.json.
-import ROLES from "../../config/roles.json";
-import META from "../../public/data/meta.json";
+import ROLES from "../config/roles.json";
+import META from "../public/data/meta.json";
 
 // CPRO -> código de CCAA, a partir del catálogo de datos
 const CPRO2CCA = {};

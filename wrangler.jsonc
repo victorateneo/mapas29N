@@ -1,0 +1,19 @@
+{
+  // Worker + ficheros estáticos. El Worker atiende todas las peticiones primero
+  // para que /data/* pase siempre por el control de roles.
+  "name": "mapas29n",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  // Sin dirección pública *.workers.dev: solo se entra por el dominio protegido con Access
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  // Conserva las variables que se pongan en el panel al redesplegar
+  "keep_vars": true
+  // ACCESS_TEAM_DOMAIN y ACCESS_AUD se configuran en el panel: Settings → Variables and Secrets
+}

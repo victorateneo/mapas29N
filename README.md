@@ -5,59 +5,32 @@ Web de Ateneo del Dato con la prioridad territorial del Frente Amplio por comuni
 ## Cómo está montado
 
 ```
-navegador ──► Cloudflare Access (PIN por email) ──► Cloudflare Pages
+navegador ──► Cloudflare Access (PIN por email) ──► Worker «mapas29n»
+                                                     ├─ src/index.js       /api/me y control de /data/* por rol
                                                      ├─ public/            web y geometrías (sin datos electorales)
-                                                     ├─ public/data/       datos, protegidos por functions/data/_middleware.js
-                                                     └─ functions/api/me   quién eres y qué comunidades ves
+                                                     └─ public/data/       datos; solo salen a través del Worker
 ```
 
 - **Access** decide quién entra. **`config/roles.json`** decide qué ve cada uno.
-- Los datos de `/data/*` pasan siempre por el servidor: una provincia fuera del rol devuelve 403 y los ficheros nacionales llegan recortados a las comunidades permitidas.
-- Las geometrías (`public/geo`) son públicas para quien pasa Access: no llevan datos.
+- El Worker atiende todas las peticiones (`run_worker_first`): una provincia fuera del rol devuelve 403 y los ficheros nacionales salen recortados a las comunidades permitidas.
+- No hay dirección `*.workers.dev`: solo se entra por el dominio propio, protegido con Access.
 
 ## Puesta en marcha (una sola vez)
 
-### 1. Repositorio
-Sube esta carpeta a un repositorio **privado** de GitHub de la organización (por ejemplo `ateneodeldato/mapas-fa`).
-
-### 2. Cloudflare Pages
-1. Cloudflare → *Workers & Pages* → *Create* → *Pages* → *Connect to Git* → elige el repositorio.
-2. Configuración de build:
-   - Framework preset: **None**
-   - Build command: *(vacío)*
-   - Build output directory: **`public`**
-3. *Save and Deploy*. Quedará en `mapas-fa.pages.dev`.
-
-### 3. Dominio
-En el proyecto de Pages → *Custom domains* → *Set up a domain* → `mapas.ateneodeldato.com` (el dominio tiene que estar en Cloudflare; si no, Cloudflare indica el CNAME que hay que crear).
-
-### 4. Cloudflare Access (login)
-1. Cloudflare → *Zero Trust* → *Settings* → *Authentication* → añade **One-time PIN** como método de login.
-2. *Access* → *Applications* → *Add an application* → **Self-hosted**:
-   - Application domain: `mapas.ateneodeldato.com` **y** `mapas-fa.pages.dev` (y `*.mapas-fa.pages.dev` para las vistas previas). Así nadie entra por la dirección .pages.dev sin login.
-   - Identity providers: One-time PIN.
-3. Política **Allow** → *Include* → *Emails ending in* `@ateneodeldato.com`. Cuando entre gente de FA, añade sus emails en la misma política (*Emails*).
-4. Guarda y copia el **Application Audience (AUD) Tag** (en la ficha de la aplicación).
-
-### 5. Variables del proyecto Pages
-*Settings* → *Variables and Secrets* (entorno Production y Preview):
-
-| Variable | Valor |
-|---|---|
-| `ACCESS_TEAM_DOMAIN` | `TU-EQUIPO.cloudflareaccess.com` (Zero Trust → Settings → Custom pages / Team domain) |
-| `ACCESS_AUD` | el AUD Tag del paso 4 |
-
-Vuelve a desplegar (*Deployments* → *Retry deployment*). Listo.
+1. **Worker conectado al repo.** *Workers & Pages* → *Create* → *Import a repository* → `mapas29N`. Deploy command: `npx wrangler deploy` (la configuración está en `wrangler.jsonc`). Cada push a `main` se publica solo.
+2. **Dominio.** En el Worker → *Settings* → *Domains & Routes* → *Add* → *Custom domain* → `mapas.ateneodeldato.com`.
+3. **Access.** *Zero Trust* → *Settings* → *Authentication*: añade **One-time PIN**. Después *Access* → *Applications* → *Add an application* → **Self-hosted** → dominio `mapas.ateneodeldato.com`, política **Allow** con *Emails ending in* `@ateneodeldato.com`. Copia el **Application Audience (AUD) Tag**.
+4. **Variables.** En el Worker → *Settings* → *Variables and Secrets*: `ACCESS_TEAM_DOMAIN` = `TU-EQUIPO.cloudflareaccess.com` y `ACCESS_AUD` = el AUD Tag. Vuelve a desplegar.
 
 ## Día a día
 
 ### Dar acceso a alguien
-1. Añade su email en la política de Access (paso 4.3), si no es de `@ateneodeldato.com`.
+1. Añade su email en la política de Access (paso 3), si no es de `@ateneodeldato.com`.
 2. Añade su email y rol en `config/roles.json`:
    ```json
    "usuarios": { "nombre@frenteamplio.es": "andalucia" }
    ```
-3. Commit y push: Pages republica solo en un minuto.
+3. Commit y push: el Worker se republica solo en un minuto.
 
 Los roles se definen en el mismo fichero con códigos INE de comunidad (`"*"` = todas). Códigos: 01 Andalucía · 02 Aragón · 03 Asturias · 04 Illes Balears · 05 Canarias · 06 Cantabria · 07 Castilla y León · 08 Castilla-La Mancha · 09 Cataluña · 10 C. Valenciana · 11 Extremadura · 12 Galicia · 13 Madrid · 14 Murcia · 15 Navarra · 16 País Vasco · 17 La Rioja · 18 Ceuta · 19 Melilla.
 
@@ -87,6 +60,6 @@ python3 pipeline/build_data.py
 ### Probar en local
 ```bash
 npm install
-npm run dev        # http://localhost:8788, entras como dev@ateneodeldato.com
+npm run dev        # http://localhost:8787, entras como dev@ateneodeldato.com
 ```
-Para probar otro rol: `npx wrangler pages dev public --binding DEV_EMAIL=email@ejemplo.es`. `DEV_EMAIL` **nunca** se configura en Cloudflare.
+Para probar otro rol: `npx wrangler dev --var DEV_EMAIL:email@ejemplo.es`. `DEV_EMAIL` **nunca** se configura en Cloudflare.
