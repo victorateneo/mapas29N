@@ -9,8 +9,9 @@
     "binding": "ASSETS",
     "run_worker_first": true
   },
-  // Sin dirección pública *.workers.dev: solo se entra por el dominio protegido con Access
-  "workers_dev": false,
+  // Dirección mapas29n.<cuenta>.workers.dev, protegida con Cloudflare Access desde el panel.
+  // Sin login no se ven datos: el Worker exige el token de Access en /api y /data.
+  "workers_dev": true,
   "preview_urls": false,
   "observability": { "enabled": true },
   // Conserva las variables que se pongan en el panel al redesplegar
