@@ -1,6 +1,6 @@
 # Mapa de prioridades FA, generales 29N
 
-Web de Ateneo del Dato con la prioridad territorial del Frente Amplio por comunidad, provincia, municipio y sección censal. Cada persona entra con su email y solo recibe los datos de las comunidades de su rol.
+Web de Ateneo del Dato en **https://29n.ateneomaps.app** con la prioridad territorial del Frente Amplio por comunidad, provincia, municipio y sección censal. Cada persona entra con su email y solo recibe los datos de las comunidades de su rol.
 
 ## Cómo está montado
 
@@ -13,13 +13,14 @@ navegador ──► Cloudflare Access (PIN por email) ──► Worker «mapas29
 
 - **Access** decide quién entra. **`config/roles.json`** decide qué ve cada uno.
 - El Worker atiende todas las peticiones (`run_worker_first`): una provincia fuera del rol devuelve 403 y los ficheros nacionales salen recortados a las comunidades permitidas.
-- No hay dirección `*.workers.dev`: solo se entra por el dominio propio, protegido con Access.
+- Solo se entra por `29n.ateneomaps.app`. La dirección `*.workers.dev` está desactivada (`workers_dev: false`).
+- El dominio `ateneomaps.app` está registrado en Cloudflare y sirve para más mapas (`otro.ateneomaps.app`).
 
 ## Puesta en marcha (una sola vez)
 
 1. **Worker conectado al repo.** *Workers & Pages* → *Create* → *Import a repository* → `mapas29N`. Deploy command: `npx wrangler deploy` (la configuración está en `wrangler.jsonc`). Cada push a `main` se publica solo.
-2. **Dominio.** En el Worker → *Settings* → *Domains & Routes* → *Add* → *Custom domain* → `mapas.ateneodeldato.com`.
-3. **Access.** *Zero Trust* → *Settings* → *Authentication*: añade **One-time PIN**. Después *Access* → *Applications* → *Add an application* → **Self-hosted** → dominio `mapas.ateneodeldato.com`, política **Allow** con *Emails ending in* `@ateneodeldato.com`. Copia el **Application Audience (AUD) Tag**.
+2. **Dominio.** En el Worker → *Domains* → *Add Domain* → `ateneomaps.app`, subdominio `29n`.
+3. **Access.** En el Worker → *Access* → *Worker Access* (*All traffic*): política **Allow** con *Email domain* `ateneodeldato.com`. Cubre todas las direcciones del Worker, también el dominio propio. Copia el **AUD tag** que aparece en *Application values*.
 4. **Variables.** En el Worker → *Settings* → *Variables and Secrets*: `ACCESS_TEAM_DOMAIN` = `TU-EQUIPO.cloudflareaccess.com` y `ACCESS_AUD` = el AUD Tag. Vuelve a desplegar.
 
 ## Día a día

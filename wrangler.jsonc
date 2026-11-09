@@ -9,9 +9,10 @@
     "binding": "ASSETS",
     "run_worker_first": true
   },
-  // Dirección mapas29n.<cuenta>.workers.dev, protegida con Cloudflare Access desde el panel.
+  // Se entra solo por https://29n.ateneomaps.app (dominio propio, conectado en el panel:
+  // Worker → Domains), protegido con Cloudflare Access. Sin dirección *.workers.dev.
   // Sin login no se ven datos: el Worker exige el token de Access en /api y /data.
-  "workers_dev": true,
+  "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true },
   // Conserva las variables que se pongan en el panel al redesplegar
