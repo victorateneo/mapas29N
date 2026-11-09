@@ -436,7 +436,7 @@ function addBasemap() {
   // como una maqueta, para que el color de la sección se siga viendo en el suelo.
   L("b-edificios", "building", { type: "fill-extrusion", minzoom: 13, layout: { visibility: S.d3 ? "visible" : "none" },
     paint: { "fill-extrusion-color": "#FFFFFF", "fill-extrusion-vertical-gradient": true,
-      "fill-extrusion-height": ["interpolate", ["linear"], ["zoom"], 13, 0, 14.5, ["coalesce", ["get", "render_height"], 8]],
+      "fill-extrusion-height": ["interpolate", ["linear"], ["zoom"], 13, 0, 13.8, ["coalesce", ["get", "render_height"], 8]],
       "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
       "fill-extrusion-opacity": 0.82 } }, "veil");
   // Nombres, por encima de todo
@@ -477,7 +477,8 @@ function toggle3D(on) {
   if (map.getLayer("b-edificios")) map.setLayoutProperty("b-edificios", "visibility", on ? "visible" : "none");
   if (on) {
     const z = map.getZoom();
-    map.easeTo({ pitch: 60, bearing: -17, zoom: Math.max(z, 15), duration: 1600 });
+    const fb = S.focus && bboxOf(S.focus.geom);
+    map.easeTo({ pitch: 60, bearing: -17, zoom: Math.max(z, 14.2), duration: 1600, ...(fb && z < 14.2 ? { center: [(fb[0] + fb[2]) / 2, (fb[1] + fb[3]) / 2] } : {}) });
     if (z < 11) status("Vista 3D: busca un municipio o acércate a una ciudad para ver los edificios", 4000);
   } else map.easeTo({ pitch: 0, bearing: 0, duration: 900 });
 }
