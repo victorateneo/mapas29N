@@ -16,6 +16,7 @@ Pasos
      × log10(censo). Premia a la vez calidad y tamaño, sin que las ciudades grandes
      se lo lleven todo. Se reescala a 0–10 y se reparte 10/10/20/30/30 %.
 """
+import json
 import math
 import os
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -83,15 +84,45 @@ def thresholds(score):
     v = score.dropna().to_numpy()
     return [float(np.percentile(v, 100 * (1 - c))) for c in CUTS[:4]]
 
+def level_of(x, t):
+    """Nivel 0–4 de un valor según los cortes t (5 = sin datos)."""
+    if pd.isna(x): return 5
+    for i, c in enumerate(t):
+        if x >= c: return i
+    return 4
+
 def levels_by_share(score):
     """Nivel 0–4 (5 = sin datos) con reparto 10/10/20/30/30 % por percentiles."""
     t = thresholds(score)
-    def lv(x):
-        if pd.isna(x): return 5
-        for i, c in enumerate(t):
-            if x >= c: return i
-        return 4
-    return score.apply(lv).astype(int)
+    return score.apply(lambda x: level_of(x, t)).astype(int)
+
+def rellenar(valores, secciones):
+    """Rellena con la media de las vecinas las secciones sin valor.
+
+    valores: {cusec: valor} con los datos reales.
+    secciones: {cusec: [cumun, nombre, [vecinas]]} del seccionado de 2025.
+    Primero se usan solo vecinas del mismo municipio; si no hay ninguna con valor,
+    cualquier vecina. Se hace por rondas para que los huecos grandes se rellenen
+    desde fuera hacia dentro. Lo que quede aislado toma la media de su municipio
+    (o de su provincia).
+    """
+    v = {c: x for c, x in valores.items() if c in secciones and pd.notna(x)}
+    falta = [c for c in secciones if c not in v]
+    for mismo_mun in (True, False):
+        while falta:
+            nuevos = {}
+            for c in falta:
+                mun = secciones[c][0]
+                xs = [v[n] for n in secciones[c][2] if n in v and (not mismo_mun or secciones[n][0] == mun)]
+                if xs: nuevos[c] = float(np.mean(xs))
+            if not nuevos: break
+            v.update(nuevos)
+            falta = [c for c in falta if c not in v]
+    for c in falta:
+        for clave in (lambda k: secciones[k][0], lambda k: k[:2]):
+            xs = [x for k, x in v.items() if clave(k) == clave(c)]
+            if xs: v[c] = float(np.mean(xs)); break
+    return v
 
 def cut_values(score, lv):
     return {PRIOS[i]: round(float(score[lv == i].min()), 2) for i in range(5)}
@@ -149,7 +180,33 @@ def run(sscc_xlsx, prov_xlsx, cp_csv):
     cpd = mp.join(cpd)
     thr_cp = cut_values(cpd["indice"], cpd["nivel"])
 
-    return dict(prov=prov, secc=d, mun=mun, cp=cpd, thr=dict(seccion=thr_sec, municipio=thr_mun, cp=thr_cp))
+    # ── 5. Seccionado 2025 (el que se pinta) ────────────────────────
+    # Mismo código = mismo scoring; secciones nuevas o sin scoring = media de vecinas.
+    # Los índices de municipio y CP de arriba usan solo las secciones con scoring real.
+    s25 = json.load(open(IN("secciones_2025.json")))
+    t_sec = thresholds(d["score_final"])
+    sc = rellenar(dict(zip(d["cusec"], d["score_final"])), s25)
+    s25df = pd.DataFrame({"cusec": list(s25), "cumun": [x[0] for x in s25.values()],
+                          "mun_n": [x[1] for x in s25.values()]})
+    s25df["cpro"] = s25df["cusec"].str[:2]
+    s25df["score_final"] = s25df["cusec"].map(sc)
+    s25df["nivel"] = s25df["score_final"].apply(lambda x: level_of(x, t_sec)).astype(int)
+    # municipios nuevos (segregaciones): media del índice de los municipios vecinos
+    vec_mun = {}
+    for c, (m, _, ns) in s25.items():
+        vec_mun.setdefault(m, set()).update(s25[n][0] for n in ns if s25[n][0] != m)
+    t_mun = thresholds(mun["indice"])
+    for m in sorted(set(s25df["cumun"]) - set(mun.index)):
+        xs = [mun.at[k, "indice"] for k in vec_mun.get(m, ()) if k in mun.index and pd.notna(mun.at[k, "indice"])]
+        g = s25df[s25df["cumun"] == m]
+        mun.loc[m, ["mun_n", "cpro"]] = [g["mun_n"].iloc[0], m[:2]]
+        mun.loc[m, "indice"] = float(np.mean(xs)) if xs else np.nan
+        mun.loc[m, "nivel"] = level_of(mun.at[m, "indice"], t_mun)
+        mun.loc[m, "n_secc"] = len(g)
+    mun["nivel"] = mun["nivel"].astype(int)
+
+    return dict(prov=prov, secc=d, secc25=s25df, mun=mun, cp=cpd,
+                thr=dict(seccion=thr_sec, municipio=thr_mun, cp=thr_cp))
 
 if __name__ == "__main__":
     r = run(IN("prioridades_sscc.xlsx"), IN("Prioridad_provincias_FA_29N_Ateneo.xlsx"), IN("cod_pos_sscc.csv"))

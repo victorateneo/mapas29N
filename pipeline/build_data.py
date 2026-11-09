@@ -34,19 +34,27 @@ def r(x, n=2):
 def s(x):
     return None if x is None or (isinstance(x, float) and math.isnan(x)) else x
 
-# ── Secciones ─────────────────────────────────────────────────────────
+# ── Secciones (seccionado 2025) ───────────────────────────────────────
+# Datos electorales de 2023 por código; el scoring viene de secc25 (real o media de vecinas).
 SSCC_COLS = ["score", "pidx", "cumun", "score_orig", "v23", "censo23", "part23", "sumar23", "psoe23",
              "izqnac23", "izqmin23", "dcha23", "otros23",
              "v19", "censo19", "part19", "sumar19", "psoe19", "izqnac19", "izqmin19", "dcha19", "otros19"]
-for cpro, g in d.groupby("cpro"):
+ELEC = SSCC_COLS[4:]
+d23 = d.set_index("cusec")
+s25 = R["secc25"]
+for cpro, g in s25.groupby("cpro"):
+    peso = float(prov.loc[cpro, "peso"])
     rows = {}
     for t in g.itertuples(index=False):
-        rows[t.cusec] = [r(t.score_final), int(t.nivel), t.cumun, r(t.score_orig), s(t.v23),
-                         None if pd.isna(t.censo23) else int(t.censo23), r(t.part23), r(t.sumar23), r(t.psoe23),
-                         r(t.izqnac23), r(t.izqmin23), r(t.dcha23), r(t.otros23), s(t.v19),
-                         None if pd.isna(t.censo19) else int(t.censo19), r(t.part19), r(t.sumar19), r(t.psoe19),
-                         r(t.izqnac19), r(t.izqmin19), r(t.dcha19), r(t.otros19)]
-    json.dump({"cols": SSCC_COLS, "peso": float(prov.loc[cpro, "peso"]), "rows": rows},
+        e = d23.loc[t.cusec] if t.cusec in d23.index else None
+        elec = []
+        for c in ELEC:
+            x = None if e is None else e[c]
+            if c in ("v23", "v19"): elec.append(s(x))
+            elif c in ("censo23", "censo19"): elec.append(None if x is None or pd.isna(x) else int(x))
+            else: elec.append(r(x))
+        rows[t.cusec] = [r(t.score_final), int(t.nivel), t.cumun, r(t.score_final / peso)] + elec
+    json.dump({"cols": SSCC_COLS, "peso": peso, "rows": rows},
               open(f"{OUT}/sscc/{cpro}.json", "w"), ensure_ascii=False, separators=(",", ":"))
 
 # ── Agregados electorales (para popups) ───────────────────────────────
@@ -72,8 +80,9 @@ VOTE_COLS = ["n", "dist", "pct_prior", "score_medio", "v23", "censo23", "part23"
 # ── Municipios ────────────────────────────────────────────────────────
 MUN_COLS = ["name", "cpro", "score", "pidx"] + VOTE_COLS
 mun_rows = {}
-for cumun, g in d.groupby("cumun"):
-    v = votos(g); m = mun.loc[cumun]
+for cumun, m in mun.iterrows():
+    g = d[d["cumun"] == cumun]
+    v = votos(g) if len(g) else {c: None for c in VOTE_COLS}   # municipios nuevos de 2025: sin datos de 2023
     mun_rows[cumun] = [m["mun_n"], cumun[:2], r(m["indice"]), int(m["nivel"])] + [v[c] for c in VOTE_COLS]
 json.dump({"cols": MUN_COLS, "rows": mun_rows}, open(f"{OUT}/municipios.json", "w"), ensure_ascii=False, separators=(",", ":"))
 
@@ -102,7 +111,8 @@ meta = {
     "umbrales_ccaa": cut_values(ccaa_score, ccaa_lv),
     "ccaa": sorted([{"cca": k, "name": v[0], "provincias": sorted([p for p, c in cpro2cca.items() if c == k])} for k, v in ccaa.items()], key=lambda x: x["name"]),
     "provincias": {k: v[0] for k, v in provincias.items()},
-    "n_secciones": int(len(d)),
+    "n_secciones": int(len(s25)),
+    "seccionado": "INE 1/1/2025",
     "fuente": "prioridades_sscc.xlsx × Prioridad_provincias_FA_29N_Ateneo.xlsx (18/10/2026)",
 }
 json.dump(meta, open(f"{OUT}/meta.json", "w"), ensure_ascii=False, indent=1)

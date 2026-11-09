@@ -97,12 +97,17 @@ select, input[type="search"] {
 #focus-bar button:hover { background: rgba(255,255,255,.12); }
 .demo .lbl { color: var(--azul); }
 
-/* Leyenda */
-#legend { position: absolute; right: 16px; bottom: 24px; background: var(--blanco); border-radius: 6px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0,25,44,.12); z-index: 3; max-width: 230px; display: flex; flex-direction: column; gap: 8px; }
-#legend .rows { display: flex; flex-direction: column; gap: 5px; }
-#legend .row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-#legend .row .sw { width: 18px; height: 12px; border-radius: 2px; border: 1px solid rgba(0,25,44,.12); flex: none; }
-#legend .note { font-size: 10.5px; color: var(--gris); line-height: 1.4; }
+/* Panel plegable */
+.panel-top { display: flex; align-items: center; justify-content: space-between; }
+.icon-btn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 4px 6px; margin: -4px -6px -4px 0; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; color: var(--gris); }
+.icon-btn:hover { background: #F1F4FA; color: var(--oscuro); }
+#panel.closed { display: none; }
+#panel-open { position: absolute; top: 16px; left: 16px; z-index: 3; display: none; align-items: center; gap: 8px; padding: 9px 14px; border: 0; border-radius: 6px; background: var(--oscuro); color: var(--blanco); font-weight: 600; cursor: pointer; box-shadow: 0 6px 24px rgba(0,25,44,.2); }
+#panel-open:hover { background: #062B47; }
+#panel.closed ~ #panel-open { display: inline-flex; }
+#panel.closed ~ #count { left: 16px; }
+.mut-sw { display: inline-block; width: 12px; height: 10px; border-radius: 2px; background: #E3E8F0; border: 1px solid rgba(0,25,44,.12); vertical-align: -1px; margin-right: 5px; }
+.maplibregl-ctrl-home .maplibregl-ctrl-icon { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
 
 #fatal { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: var(--fondo); z-index: 20; padding: 24px; }
 #fatal div { max-width: 440px; background: var(--blanco); border-radius: 6px; padding: 24px; box-shadow: 0 6px 24px rgba(0,25,44,.12); display: flex; flex-direction: column; gap: 10px; }
@@ -194,7 +199,6 @@ select, input[type="search"] {
   .title .sub, .who span, .client { display: none; }
   #panel { width: calc(100% - 32px); max-height: 46%; }
   #count { display: none; }
-  #legend { bottom: 12px; right: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
@@ -218,7 +222,7 @@ select, input[type="search"] {
 
     <aside id="panel" aria-label="Controles del mapa">
       <div class="sec">
-        <span class="lbl">Nivel</span>
+        <div class="panel-top"><span class="lbl">Nivel</span><button type="button" class="icon-btn" id="panel-close" aria-controls="panel" title="Ocultar el panel para ver más mapa"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2.5 4 6l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Ocultar</button></div>
         <div class="seg" role="group" aria-label="Nivel geográfico">
           <button id="lv-ccaa" data-lv="ccaa" aria-pressed="false">CCAA</button>
           <button id="lv-prov" data-lv="provincias" aria-pressed="true">Provincias</button>
@@ -238,8 +242,9 @@ select, input[type="search"] {
         </div>
       </div>
       <div class="sec" id="sec-filter">
-        <span class="lbl">Prioridad</span>
+        <span class="lbl" id="chips-lbl">Prioridad</span>
         <div class="chips" id="chips"></div>
+        <p class="hint" id="chips-note"></p>
       </div>
       <div class="sec">
         <button class="btn" id="dl" type="button">
@@ -255,7 +260,7 @@ select, input[type="search"] {
       </div>
     </aside>
 
-    <div id="legend" aria-live="polite"></div>
+    <button type="button" id="panel-open" aria-controls="panel"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 3.5h10M4 7h6M5.5 10.5h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Filtros</button>
     <div id="count" class="num"></div>
     <div id="status" role="status"></div>
     <div id="fatal" role="alert"><div><b>Sin acceso</b><p id="fatal-txt" class="hint"></p><a class="hint" href="/cdn-cgi/access/logout">Entrar con otro email</a></div></div>
@@ -277,7 +282,8 @@ const LV_HINT = {
 };
 const fmtN = new Intl.NumberFormat("es-ES", { useGrouping: "always" });
 const f1 = v => v == null ? "—" : v.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const PAD = () => (innerWidth < 760 ? { top: 20, bottom: 20, left: 20, right: 20 } : { top: 40, bottom: 40, left: 330, right: 60 });
+const panelOpen = () => !document.getElementById("panel").classList.contains("closed");
+const PAD = () => (innerWidth < 760 ? { top: 20, bottom: 20, left: 20, right: 20 } : { top: 40, bottom: 40, left: panelOpen() ? 330 : 60, right: 60 });
 
 // ── Estado ────────────────────────────────────────────────────────
 const S = {
@@ -336,12 +342,18 @@ async function init() {
 
   map = new maplibregl.Map({
     container: "map",
-    style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#EEF2F8" } }] },
+    style: {
+      version: 8,
+      glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+      sources: {},
+      layers: [{ id: "bg", type: "background", paint: { "background-color": "#EEF2F8" } }]
+    },
     bounds: [[-9.6, 35.8], [4.5, 43.9]], fitBoundsOptions: { padding: PAD() },
     maxBounds: [[-22, 25], [9, 46.5]], minZoom: 4, maxZoom: 15, attributionControl: false
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-  map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "Secciones y límites: INE · Datos: Ateneo del Dato" }));
+  map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "Secciones y límites: INE 2025 · Datos: Ateneo del Dato · Mapa base: <a href=\"https://openfreemap.org\" target=\"_blank\">OpenFreeMap</a> © <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\">OpenStreetMap</a>" }));
+  map.addControl(new HomeControl(), "top-right");
   await new Promise(r => map.on("load", r));
   buildLayers();
   bindUI();
@@ -375,6 +387,7 @@ function buildLayers() {
   for (const s of ["mun", "sscc", "prov", "ccaa"]) {
     map.addLayer({ id: `${s}-hover`, type: "line", source: s, paint: { "line-color": "#0033FF", "line-width": hoverLine(2.6) }, layout: vis });
   }
+  addPlaceLabels();
 
   // Hover sobre la capa activa
   let hov = null;
@@ -389,6 +402,42 @@ function buildLayers() {
   map.on("mouseout", clearHov);
   map.on("click", e => onClick(e));
   map.on("moveend", () => { if (S.level === "secciones" && !S.focus) ensureSecciones(); });
+}
+
+// Nombres de ciudades y pueblos (OpenFreeMap / OpenStreetMap) por encima de los colores.
+// Halo blanco para que se lean sobre cualquier nivel de prioridad; más pueblos según se acerca el mapa.
+// La fuente se añade después de cargar el mapa: si el mapa base no responde, el resto funciona igual.
+function addPlaceLabels() {
+  map.addSource("omt", { type: "vector", url: "https://tiles.openfreemap.org/planet" });
+  const name = ["coalesce", ["get", "name:es"], ["get", "name"]];
+  const base = { type: "symbol", source: "omt", "source-layer": "place" };
+  const paint = { "text-color": "#00192C", "text-halo-color": "rgba(255,255,255,.92)", "text-halo-width": 1.6, "text-halo-blur": 0.3 };
+  const font = w => [w === "b" ? "Noto Sans Bold" : "Noto Sans Regular"];
+  map.addLayer({ ...base, id: "lbl-pueblos", minzoom: 10, filter: ["in", ["get", "class"], ["literal", ["village", "suburb"]]],
+    layout: { "text-field": name, "text-font": font(), "text-size": ["interpolate", ["linear"], ["zoom"], 10, 10.5, 14, 13], "text-padding": 4 },
+    paint: { ...paint, "text-color": "#1E3A52" } });
+  map.addLayer({ ...base, id: "lbl-villas", minzoom: 8, filter: ["==", ["get", "class"], "town"],
+    layout: { "text-field": name, "text-font": font(), "text-size": ["interpolate", ["linear"], ["zoom"], 8, 10.5, 12, 13.5], "text-padding": 4 }, paint });
+  map.addLayer({ ...base, id: "lbl-ciudades", minzoom: 5, filter: ["==", ["get", "class"], "city"],
+    layout: { "text-field": name, "text-font": font("b"), "text-size": ["interpolate", ["linear"], ["zoom"], 5, ["case", ["<=", ["get", "rank"], 4], 12, 10.5], 10, 15], "text-padding": 6,
+      "symbol-sort-key": ["get", "rank"] }, paint });
+}
+
+// Botón «centrar»: vuelve a la vista de partida (la del foco si hay una provincia o municipio abiertos)
+class HomeControl {
+  onAdd() {
+    const el = document.createElement("div");
+    el.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    el.innerHTML = `<button type="button" class="maplibregl-ctrl-home" title="Centrar el mapa" aria-label="Centrar el mapa"><span class="maplibregl-ctrl-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="4.2" stroke="#00192C" stroke-width="1.6"/><circle cx="8" cy="8" r="1.4" fill="#00192C"/><path d="M8 1v2.2M8 12.8V15M1 8h2.2M12.8 8H15" stroke="#00192C" stroke-width="1.6" stroke-linecap="round"/></svg></span></button>`;
+    el.querySelector("button").onclick = recenter;
+    return el;
+  }
+  onRemove() {}
+}
+function recenter() {
+  if (S.focus) return fit(bboxOf(S.focus.geom), { padding: PAD() });
+  const c = document.getElementById("sel-ccaa").value;
+  fit(c ? S.ccaaBBox[c] : homeBB());
 }
 
 // Qué hay bajo el cursor, según el modo
@@ -475,7 +524,7 @@ async function setLevel(lv) {
   clearFocus(false);
   S.level = lv; pressLevel(lv); showLayers(lv);
   document.getElementById("lv-hint").textContent = LV_HINT[lv];
-  closePopup(); applyFilters(); renderLegend();
+  closePopup(); applyFilters();
   if (lv === "municipios" && !S.mun) { status("Cargando municipios…"); await loadMunicipios(); status(""); }
   if (lv === "secciones") ensureSecciones();
 }
@@ -515,7 +564,7 @@ async function setFocusView(v) {
   if (v === "municipios" && !S.mun) { status("Cargando municipios…"); await loadMunicipios(); status(""); }
   showLayers("foco_" + v); pressLevel(v);
   document.getElementById("lv-hint").textContent = FOCUS_HINT[S.focus.type][v];
-  applyFilters(); renderLegend();
+  applyFilters();
 }
 function setFocus(fc) {
   S.focus = fc;
@@ -545,7 +594,8 @@ function applyFilters() {
   const focusF = S.focus ? ["==", ["get", "_cpro"], S.focus.cpro] : true;
   for (const id of ["mun-fill", "mun-line"]) map.setFilter(id, ["all", roleF, prioF, focusF]);
   for (const id of ["sscc-fill", "sscc-line"]) map.setFilter(id, ["all", roleF, prioF, focusF]);
-  for (const id of ["ccaa-fill", "prov-fill"]) map.setFilter(id, ["all", roleF]);
+  map.setFilter("ccaa-fill", ["all", roleF, prioF]);
+  map.setFilter("prov-fill", S.focus ? ["all", roleF] : ["all", roleF, prioF]);
   map.setFilter("mask", S.allowed ? ["!", ["in", ["get", "_cca"], ["literal", [...S.allowed]]]] : ["boolean", false]);
   updateCounts();
 }
@@ -559,7 +609,7 @@ function applyRole(me) {
   sel.innerHTML = (S.allowed && list.length === 1 ? "" : `<option value="">${S.allowed ? "Todas mis comunidades" : "Toda España"}</option>`) +
     list.map(c => `<option value="${c.cca}">${c.name}</option>`).join("");
   if (S.focus && !isAllowed(S.cpro2cca[S.focus.cpro])) clearFocus(false);
-  pushSscc(); applyFilters(); buildSearch(); closePopup(); renderLegend();
+  pushSscc(); applyFilters(); buildSearch(); closePopup();
   fit(homeBB(), { duration: 700 });
 }
 
@@ -591,10 +641,12 @@ function levelRows() {
 function updateCounts() {
   if (!S.terr) return;
   const ps = levelRows(), cnt = [0, 0, 0, 0, 0, 0]; ps.forEach(p => cnt[p ?? 5]++);
-  const filterable = !!S.focus || S.level === "municipios" || S.level === "secciones";
-  document.getElementById("sec-filter").style.display = filterable ? "" : "none";
+  const filterable = true;
+  const lv = S.focus ? S.focusView : S.level, rng = chipRanges(lv);
+  document.getElementById("chips-lbl").textContent = { provincias: "Prioridad provincial", secciones: "Prioridad de la sección", municipios: "Prioridad municipal", ccaa: "Prioridad autonómica" }[lv];
+  document.getElementById("chips-note").innerHTML = CHIP_NOTE[lv] + (S.allowed ? `<br><span class="mut-sw"></span>Gris: fuera de tu acceso.` : "");
   const chips = document.getElementById("chips");
-  chips.innerHTML = PRIOS.map((p, i) => i === 5 && !cnt[5] ? "" : `<button class="chip" data-i="${i}" aria-pressed="${S.filters.has(i)}"><span class="sw" style="background:${P_COLOR[i]}"></span><span>${p}</span><span class="n num">${fmtN.format(cnt[i])}</span></button>`).join("");
+  chips.innerHTML = PRIOS.map((p, i) => i === 5 && !cnt[5] ? "" : `<button class="chip" data-i="${i}" aria-pressed="${S.filters.has(i)}" title="${rng[i] ? (lv === "provincias" ? "Peso " : "Valor ") + rng[i].replace("peso ", "") : ""}"><span class="sw" style="background:${P_COLOR[i]}"></span><span>${p}</span><span class="n num">${fmtN.format(cnt[i])}</span></button>`).join("");
   chips.querySelectorAll(".chip").forEach(b => b.onclick = () => {
     const i = +b.dataset.i;
     if (S.filters.has(i)) { if (S.filters.size > 1) S.filters.delete(i); } else S.filters.add(i);
@@ -607,23 +659,17 @@ function updateCounts() {
   document.getElementById("dl-hint").textContent = S.focus ? (S.focusView === "municipios" ? `Exporta los municipios de ${S.meta.provincias[S.focus.cpro]} con las prioridades activas.` : `Exporta las secciones de ${S.focus.name} con las prioridades activas.`)
     : S.level === "secciones" ? "Incluye todas las secciones de tus comunidades, no solo las cargadas." : "Exporta lo que ves: nivel, comunidades del rol y prioridades activas.";
 }
-function renderLegend() {
-  const el = document.getElementById("legend");
-  const lv = S.focus ? S.focusView : S.level;
-  if (lv === "provincias") {
-    const cnt = [0, 0, 0, 0, 0]; Object.values(S.terr.provincias).forEach(r => cnt[r[2]]++);
-    el.innerHTML = `<span class="lbl">Prioridad provincial</span><div class="rows">${S.meta.niveles_provincia.map((p, i) => `<div class="row"><span class="sw" style="background:${P_COLOR[i]}"></span><span style="flex:1">${p}</span><span class="num" style="color:var(--gris);font-size:11px">${cnt[i]} · ×${S.meta.pesos_provincia[i].toFixed(2).replace(".", ",")}</span></div>`).join("")}</div><p class="note">Máxima: decisión del comité. Alta: escaño en el filo en el modelo del 18/10. Media y Baja: su siguiente escaño entra con FA ≤ 9 % o ≤ 13 % nacional. El peso multiplica el scoring de sus secciones.</p>`;
-  } else {
-    const u = S.meta[{ secciones: "umbrales_seccion", municipios: "umbrales_municipio", ccaa: "umbrales_ccaa" }[lv]];
-    const rng = ["≥ " + f1(u["Máxima"]), f1(u["Alta"]) + "–" + f1(u["Máxima"]), f1(u["Media"]) + "–" + f1(u["Alta"]), f1(u["Baja"]) + "–" + f1(u["Media"]), "< " + f1(u["Baja"])];
-    const title = { secciones: "Prioridad de la sección", municipios: "Prioridad municipal", ccaa: "Prioridad autonómica" }[lv];
-    const note = { secciones: "Scoring final = scoring de la sección × peso de su provincia. Reparto 10/10/20/30/30 % en España.",
-      municipios: "Índice 0–10 = scoring medio × log del censo. Reparto 10/10/20/30/30 % entre municipios.",
-      ccaa: "Scoring final medio ponderado por censo. Reparto entre las 19 comunidades." }[lv];
-    el.innerHTML = `<span class="lbl">${title}</span><div class="rows">${PRIOS.slice(0, 5).map((p, i) => `<div class="row"><span class="sw" style="background:${P_COLOR[i]}"></span><span style="flex:1">${p}</span><span class="num" style="color:var(--gris);font-size:11px">${rng[i]}</span></div>`).join("")}</div><p class="note">${note}</p>`;
-  }
-  if (S.allowed) el.innerHTML += `<div class="row" style="font-size:11px;color:var(--gris)"><span class="sw" style="background:#E3E8F0"></span>Fuera de tu rol</div>`;
+function chipRanges(lv) {
+  if (lv === "provincias") return S.meta.pesos_provincia.map(w => `peso ×${w.toFixed(2).replace(".", ",")}`);
+  const u = S.meta[{ secciones: "umbrales_seccion", municipios: "umbrales_municipio", ccaa: "umbrales_ccaa" }[lv]];
+  return ["≥ " + f1(u["Máxima"]), f1(u["Alta"]) + "–" + f1(u["Máxima"]), f1(u["Media"]) + "–" + f1(u["Alta"]), f1(u["Baja"]) + "–" + f1(u["Media"]), "< " + f1(u["Baja"]), ""];
 }
+const CHIP_NOTE = {
+  provincias: "Máxima: decisión del comité. Alta: escaño en el filo en el modelo del 18/10. Media y Baja: su siguiente escaño entra con FA ≤ 9 % o ≤ 13 % nacional. El peso multiplica el scoring de sus secciones.",
+  secciones: "Scoring final = scoring de la sección × peso de su provincia. Reparto 10/10/20/30/30 % en España.",
+  municipios: "Índice 0–10 = scoring medio × log del censo. Reparto 10/10/20/30/30 % entre municipios.",
+  ccaa: "Scoring final medio ponderado por censo. Reparto entre las 19 comunidades."
+};
 
 // ── Popup ─────────────────────────────────────────────────────────
 let popup = null;
@@ -643,6 +689,23 @@ function openPopup(src, id, lngLat, anchor) {
   const d = recordFor(src, id); if (!d) return;
   closePopup();
   popup = new maplibregl.Popup({ maxWidth: "320px", offset: 10, focusAfterOpen: false, ...(anchor && innerWidth >= 760 ? { anchor } : {}) }).setLngLat(lngLat).setHTML(popupHTML(src, d)).addTo(map);
+  requestAnimationFrame(keepPopupClear);
+}
+// Si el popup cae debajo del panel o se sale del mapa, se desplaza el mapa lo justo para verlo entero
+function keepPopupClear() {
+  if (!popup) return;
+  const box = popup.getElement().getBoundingClientRect(), area = document.getElementById("map").getBoundingClientRect(), m = 12;
+  let left = area.left + m, dx = 0, dy = 0;
+  const panel = document.getElementById("panel");
+  if (panelOpen() && innerWidth >= 760) {
+    const pr = panel.getBoundingClientRect();
+    if (box.top < pr.bottom && box.bottom > pr.top) left = Math.max(left, pr.right + m);
+  }
+  if (box.left < left) dx = box.left - left;
+  else if (box.right > area.right - m) dx = box.right - (area.right - m);
+  if (box.top < area.top + m) dy = box.top - (area.top + m);
+  else if (box.bottom > area.bottom - m) dy = box.bottom - (area.bottom - m);
+  if (dx || dy) map.panBy([dx, dy], { duration: 350 });
 }
 function delta(a, b) {
   if (a == null || b == null) return `<span class="eq">—</span>`;
@@ -656,14 +719,14 @@ function cmpRow(name, a, b) {
 }
 function popupHTML(src, d) {
   const head = `<div class="pp-h"><span class="t">${d.tipo}</span><span class="n">${d.name}</span><span class="loc">${d.code ? d.code + " · " : ""}${d.loc ?? ""}</span></div>`;
-  if (d.missing) return `<div class="pp">${head}<div class="pp-b"><p class="hint">Esta sección existe en la cartografía de 2019 pero no en los datos de 2023 (el INE la dividió o renumeró). En producción se usará la cartografía de 2023.</p></div></div>`;
+  if (d.missing) return `<div class="pp">${head}<div class="pp-b"><p class="hint">Sin datos para esta sección.</p></div></div>`;
   const pi = d.pidx ?? 5, agg = src !== "sscc";
   const lab = src === "prov" ? S.meta.niveles_provincia[pi] : PRIOS[pi];
   const sLab = { sscc: "Scoring final", mun: "Índice municipal", prov: "Scoring final medio", ccaa: "Scoring final medio" }[src];
   let prio = `<div class="prio"><span class="pill" style="background:${P_COLOR[pi]};color:${P_TEXT[pi]};${pi === 5 ? "border:1px solid #D3D4CF" : ""}">${lab}</span>
       <div class="score"><div class="top"><span>${sLab}</span><b class="num">${d.score == null ? "—" : f1(d.score) + " / 10"}</b></div><div class="bar"><i style="width:${(d.score ?? 0) * 10}%;background:${pi >= 3 ? "#56A3FF" : P_COLOR[pi]}"></i></div></div></div>`;
   if (src === "sscc" && d.score_orig != null) prio += `<p class="hint">Scoring de la sección ${f1(d.score_orig)} × peso provincial ${d.peso.toFixed(2).replace(".", ",")}</p>`;
-  if (src === "mun") prio += `<p class="hint">Scoring medio de sus secciones <b>${f1(d.score_medio)}</b> × tamaño (${d.censo23 == null ? "—" : fmtN.format(d.censo23)} electores)</p>`;
+  if (src === "mun" && d.score_medio != null) prio += `<p class="hint">Scoring medio de sus secciones <b>${f1(d.score_medio)}</b> × tamaño (${d.censo23 == null ? "—" : fmtN.format(d.censo23)} electores)</p>`;
   if (src === "prov" && d.m) {
     const m = d.m;
     prio += `<div class="k">
@@ -696,7 +759,8 @@ function popupHTML(src, d) {
       ${nac ? cmpRow("Izq. nacional.", d.izqnac19, d.izqnac23) : ""}
       ${cmpRow("Derechas", d.dcha19, d.dcha23)}
       ${d.v19 && d.v19 !== d.v23 ? `<p class="hint">1.º en 2019: <b>${d.v19}</b></p>` : ""}</div>`;
-  return `<div class="pp">${head}<div class="pp-b">${prio}${k23}${cmp}</div></div>`;
+  const hayVotos = d.v23 != null || d.censo23 != null;
+  return `<div class="pp">${head}<div class="pp-b">${prio}${hayVotos ? k23 + cmp : ""}</div></div>`;
 }
 
 // ── Buscador ──────────────────────────────────────────────────────
@@ -776,6 +840,9 @@ function bindUI() {
   q.onkeydown = e => { if (e.key === "Enter") { const b = document.querySelector("#results button"); if (b) goMun(b.dataset.id); } };
   document.addEventListener("keydown", e => { if (e.key === "Escape" && S.focus && document.activeElement !== q) clearFocus(true); });
   document.getElementById("dl").onclick = download;
+  const panel = document.getElementById("panel");
+  document.getElementById("panel-close").onclick = () => { panel.classList.add("closed"); document.getElementById("panel-open").focus(); };
+  document.getElementById("panel-open").onclick = () => { panel.classList.remove("closed"); document.getElementById("panel-close").focus(); };
 }
 
 init().catch(e => { console.error(e); fatal("No se han podido cargar los datos. Recarga la página."); });

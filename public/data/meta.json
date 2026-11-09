@@ -263,6 +263,7 @@
   "51": "Ceuta",
   "52": "Melilla"
  },
- "n_secciones": 36462,
+ "n_secciones": 36554,
+ "seccionado": "INE 1/1/2025",
  "fuente": "prioridades_sscc.xlsx × Prioridad_provincias_FA_29N_Ateneo.xlsx (18/10/2026)"
 }

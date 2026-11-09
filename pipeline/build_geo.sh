@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Genera las geometrías del mapa a partir de la cartografía de secciones del INE.
-# Uso:  bash pipeline/build_geo.sh ruta/al/SECC_CE_20230101.shp
+# Uso:  bash pipeline/build_geo.sh ruta/al/SECC_CE_20250101.shp
 # (El .shp con su .dbf, .shx y .prj en la misma carpeta. Descarga: INE, «Cartografía
-#  digitalizada de secciones censales», fecha de referencia 1/1/2023.)
+#  digitalizada de secciones censales», fecha de referencia 1/1/2025.)
 set -euo pipefail
 SHP="${1:?Indica la ruta al .shp de secciones del INE}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,15 +10,15 @@ GEO="$ROOT/public/geo"
 TMP="$(mktemp -d)"
 MS="npx --yes mapshaper@0.6"
 
-mkdir -p "$GEO/sscc"
+mkdir -p "$GEO/sscc" "$TMP/split"
 
 # 1. Base común: WGS84, campos mínimos, topología limpia
-$MS -i "$SHP" encoding=utf8 -proj wgs84 -filter-fields CUSEC,CUMUN,CPRO,CCA,NMUN,NPRO,NCA -clean \
+$MS -i "$SHP" -proj wgs84 -filter-fields CUSEC,CUMUN,CPRO,CCA,NMUN,NPRO,NCA -clean \
     -o "$TMP/base.topojson" format=topojson quantization=1e6
 
 # 2. Secciones: una provincia por fichero, simplificadas
 $MS -i "$TMP/base.topojson" -simplify 18% weighted keep-shapes -filter-fields CUSEC \
-    -each 'CPRO=CUSEC.slice(0,2)' -split CPRO -o "$TMP/split/" format=geojson
+    -each 'CPRO=CUSEC.slice(0,2)' -split CPRO -o "$TMP/split" format=geojson
 rm -f "$GEO"/sscc/*.topo.json
 for f in "$TMP"/split/*.json; do
   b="$(basename "$f" .json)"

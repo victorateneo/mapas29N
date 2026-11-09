@@ -44,14 +44,19 @@ python3 pipeline/build_excel.py    # regenera salida/Prioridades_FA_29N_base.xls
 ```
 Commit y push de `public/data/`.
 
-Entradas en `pipeline/inputs/`: `prioridades_sscc.xlsx`, `Prioridad_provincias_FA_29N_Ateneo.xlsx`, `cod_pos_sscc.csv`.
+Entradas en `pipeline/inputs/`: `prioridades_sscc.xlsx`, `Prioridad_provincias_FA_29N_Ateneo.xlsx`, `cod_pos_sscc.csv` y `secciones_2025.json` (secciones de 2025 y sus vecinas).
 
-### Geometrías de 2023
-Ahora mismo `public/geo` usa la cartografía de secciones de 2019 (faltan 395 secciones creadas después). Para pasar a la de 2023:
+### Seccionado 2025
+El mapa se pinta sobre el seccionado del INE a 1/1/2025 (36.554 secciones). El scoring es de 2023: cada sección de 2025 toma el de su mismo código y las que no lo tienen (nuevas o sin scoring, 560) toman la media de sus vecinas, primero las de su municipio. Los índices de municipio, CP, provincia y CCAA se calculan solo con las secciones con scoring real. Si cambia el seccionado:
 ```bash
-bash pipeline/build_geo.sh ruta/SECC_CE_20230101.shp
+pip install geopandas pyogrio
+bash pipeline/build_geo.sh ruta/SECC_CE_20250101.shp     # geometrías (mapshaper)
+python3 pipeline/vecinas_2025.py ruta/SECC_CE_20250101.shp   # lista de vecinas
 python3 pipeline/build_data.py
 ```
+
+### Mapa base
+Los nombres de ciudades y pueblos vienen de OpenFreeMap (datos de OpenStreetMap, sin clave). Se cargan después del mapa: si ese servicio no responde, el mapa funciona igual sin nombres.
 
 ### Marca
 - Tipografía de titulares: copia `Gigalypse.woff2` en `public/assets/fonts/`. Mientras no esté, se usa Montserrat.
