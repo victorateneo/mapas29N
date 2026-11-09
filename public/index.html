@@ -88,11 +88,11 @@ select, input[type="search"] {
 .btn:hover { background: #0029CC; }
 .btn[disabled] { background: var(--neutro); color: var(--gris); cursor: default; }
 .demo { background: #F4F7FC; }
-#focus-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--oscuro); color: var(--blanco); border-radius: 4px; padding: 9px 10px 9px 12px; }
+#focus-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 10px; background: var(--oscuro); color: var(--blanco); border-radius: 4px; padding: 9px 10px 9px 12px; }
 #focus-bar[hidden] { display: none; }
-#focus-bar > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#focus-bar > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 140px; }
 #focus-bar .lbl { color: #A9D5FF; }
-#focus-bar b { font-family: var(--font-display); font-weight: 800; text-transform: uppercase; font-size: 14px; line-height: 1.1; }
+#focus-bar b { font-family: var(--font-display); font-weight: 800; text-transform: uppercase; font-size: 14px; line-height: 1.15; overflow-wrap: anywhere; }
 #focus-bar button { flex: none; background: transparent; color: var(--blanco); border: 1px solid rgba(255,255,255,.5); border-radius: 3px; padding: 5px 8px; font-size: 11px; font-weight: 600; cursor: pointer; }
 #focus-bar button:hover { background: rgba(255,255,255,.12); }
 .demo .lbl { color: var(--azul); }
@@ -278,7 +278,7 @@ const LV_HINT = {
   ccaa: "Scoring final medio de la comunidad (ponderado por censo). Niveles repartidos entre las 19 comunidades.",
   provincias: "Prioridad del comité según el modelo de escaños. Pincha en una para ver sus secciones censales.",
   municipios: "Índice municipal: scoring medio de sus secciones × tamaño (log del censo).",
-  secciones: "Se cargan por provincia al acercar el mapa (zoom de provincia o más)."
+  secciones: "Todas las secciones censales. Se cargan por provincia, primero las que tienes a la vista."
 };
 const fmtN = new Intl.NumberFormat("es-ES", { useGrouping: "always" });
 const f1 = v => v == null ? "—" : v.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -387,7 +387,7 @@ function buildLayers() {
   for (const s of ["mun", "sscc", "prov", "ccaa"]) {
     map.addLayer({ id: `${s}-hover`, type: "line", source: s, paint: { "line-color": "#0033FF", "line-width": hoverLine(2.6) }, layout: vis });
   }
-  addPlaceLabels();
+  addBasemap();
 
   // Hover sobre la capa activa
   let hov = null;
@@ -401,26 +401,52 @@ function buildLayers() {
   });
   map.on("mouseout", clearHov);
   map.on("click", e => onClick(e));
-  map.on("moveend", () => { if (S.level === "secciones" && !S.focus) ensureSecciones(); });
 }
 
-// Nombres de ciudades y pueblos (OpenFreeMap / OpenStreetMap) por encima de los colores.
-// Halo blanco para que se lean sobre cualquier nivel de prioridad; más pueblos según se acerca el mapa.
-// La fuente se añade después de cargar el mapa: si el mapa base no responde, el resto funciona igual.
-function addPlaceLabels() {
+// Mapa base (OpenFreeMap / OpenStreetMap, esquema OpenMapTiles) recoloreado a la marca.
+// Debajo de los colores: tierra fuera de España, agua y zonas urbanas. Encima: carreteras y ríos
+// en blanco translúcido (se ven sin tapar la prioridad), fronteras y nombres de lugares.
+// Se añade después de cargar el mapa: si el servicio no responde, el resto funciona igual.
+function addBasemap() {
   map.addSource("omt", { type: "vector", url: "https://tiles.openfreemap.org/planet" });
+  const L = (id, layer, extra, before) => { try { map.addLayer({ id, source: "omt", "source-layer": layer, ...extra }, before); } catch (e) { console.warn(id, e); } };
+  // Debajo de todo lo nuestro
+  map.setPaintProperty("bg", "background-color", "#F3F5F9");
+  L("b-agua", "water", { type: "fill", paint: { "fill-color": "#DCE6F2" } }, "land");
+  L("b-urbano", "landuse", { type: "fill", minzoom: 6, filter: ["in", ["get", "class"], ["literal", ["residential", "suburb", "neighbourhood", "commercial", "industrial"]]],
+    paint: { "fill-color": "#E6EAF1", "fill-opacity": 0.9 } }, "land");
+  // Agua interior sobre los colores (embalses, lagos), para orientarse
+  L("b-embalses", "water", { type: "fill", minzoom: 7, filter: ["!=", ["get", "class"], "ocean"], paint: { "fill-color": "#DCE6F2", "fill-opacity": 0.85 } }, "mask");
+  L("b-rios", "waterway", { type: "line", minzoom: 8, filter: ["in", ["get", "class"], ["literal", ["river", "canal"]]],
+    paint: { "line-color": "#C9D8EC", "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.6, 13, 2] } }, "mask");
+  // Carreteras: blanco translúcido sobre los colores; más detalle según se acerca
+  const roadW = (a, b) => ["interpolate", ["exponential", 1.5], ["zoom"], 6, a, 14, b];
+  L("b-calles", "transportation", { type: "line", minzoom: 12, filter: ["in", ["get", "class"], ["literal", ["minor", "service", "tertiary"]]],
+    layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#FFFFFF", "line-opacity": 0.55, "line-width": roadW(0.2, 1.6) } }, "mask");
+  L("b-carreteras", "transportation", { type: "line", minzoom: 8, filter: ["in", ["get", "class"], ["literal", ["primary", "secondary"]]],
+    layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#FFFFFF", "line-opacity": 0.7, "line-width": roadW(0.3, 3) } }, "mask");
+  L("b-autovias", "transportation", { type: "line", minzoom: 6, filter: ["in", ["get", "class"], ["literal", ["motorway", "trunk"]]],
+    layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#FFFFFF", "line-opacity": 0.85, "line-width": roadW(0.6, 4) } }, "mask");
+  L("b-fronteras", "boundary", { type: "line", filter: ["all", ["==", ["get", "admin_level"], 2], ["!=", ["get", "maritime"], 1]],
+    paint: { "line-color": "#9AA7BA", "line-width": 1, "line-dasharray": [3, 2] } }, "mask");
+  // Nombres, por encima de todo
   const name = ["coalesce", ["get", "name:latin"], ["get", "name"]];   // nombre oficial local (A Coruña, Ourense, Girona…)
-  const base = { type: "symbol", source: "omt", "source-layer": "place" };
   const paint = { "text-color": "#00192C", "text-halo-color": "rgba(255,255,255,.92)", "text-halo-width": 1.6, "text-halo-blur": 0.3 };
   const font = w => [w === "b" ? "Noto Sans Bold" : "Noto Sans Regular"];
-  map.addLayer({ ...base, id: "lbl-pueblos", minzoom: 10, filter: ["in", ["get", "class"], ["literal", ["village", "suburb"]]],
+  L("lbl-barrios", "place", { type: "symbol", minzoom: 12, filter: ["in", ["get", "class"], ["literal", ["suburb", "quarter", "neighbourhood"]]],
+    layout: { "text-field": name, "text-font": font(), "text-size": 11, "text-transform": "uppercase", "text-letter-spacing": 0.08, "text-padding": 4 },
+    paint: { ...paint, "text-color": "#3A5068" } });
+  L("lbl-pueblos", "place", { type: "symbol", minzoom: 10, filter: ["in", ["get", "class"], ["literal", ["village", "hamlet"]]],
     layout: { "text-field": name, "text-font": font(), "text-size": ["interpolate", ["linear"], ["zoom"], 10, 10.5, 14, 13], "text-padding": 4 },
     paint: { ...paint, "text-color": "#1E3A52" } });
-  map.addLayer({ ...base, id: "lbl-villas", minzoom: 8, filter: ["==", ["get", "class"], "town"],
+  L("lbl-villas", "place", { type: "symbol", minzoom: 8, filter: ["==", ["get", "class"], "town"],
     layout: { "text-field": name, "text-font": font(), "text-size": ["interpolate", ["linear"], ["zoom"], 8, 10.5, 12, 13.5], "text-padding": 4 }, paint });
-  map.addLayer({ ...base, id: "lbl-ciudades", minzoom: 5, filter: ["==", ["get", "class"], "city"],
+  L("lbl-ciudades", "place", { type: "symbol", minzoom: 5, filter: ["==", ["get", "class"], "city"],
     layout: { "text-field": name, "text-font": font("b"), "text-size": ["interpolate", ["linear"], ["zoom"], 5, ["case", ["<=", ["get", "rank"], 4], 12, 10.5], 10, 15], "text-padding": 6,
       "symbol-sort-key": ["get", "rank"] }, paint });
+  L("lbl-paises", "place", { type: "symbol", maxzoom: 7, filter: ["==", ["get", "class"], "country"],
+    layout: { "text-field": name, "text-font": font("b"), "text-size": 12, "text-transform": "uppercase", "text-letter-spacing": 0.2 },
+    paint: { ...paint, "text-color": "#6C7A8C" } });
 }
 
 // Botón «centrar»: vuelve a la vista de partida (la del foco si hay una provincia o municipio abiertos)
@@ -490,16 +516,19 @@ function loadProvSscc(c) {
   })());
   return S.ssccLoading.get(c);
 }
-async function ensureSecciones() {
-  if (map.getZoom() < 8) { status("Acerca el mapa a una provincia para ver sus secciones censales", 3500); return; }
-  const b = map.getBounds(), vb = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-  const need = Object.entries(S.provBBox)
-    .filter(([c, bb]) => bb[0] < vb[2] && bb[2] > vb[0] && bb[1] < vb[3] && bb[3] > vb[1])
-    .map(([c]) => c).filter(c => isAllowed(S.cpro2cca[c]) && !S.sscc.has(c));
-  if (!need.length) return;
-  status(`Cargando secciones de ${need.map(c => S.meta.provincias[c]).join(", ")}…`);
-  await Promise.all(need.map(loadProvSscc));
-  pushSscc(); status("");
+// Secciones de toda España (o de las comunidades del rol): se cargan por provincia, primero las
+// que están a la vista y después el resto, y se pintan según van llegando.
+let ssccAll = null;
+function ensureSecciones() {
+  if (ssccAll) return ssccAll;
+  const c = map.getCenter(), d2 = bb => ((bb[0] + bb[2]) / 2 - c.lng) ** 2 + ((bb[1] + bb[3]) / 2 - c.lat) ** 2;
+  const queue = Object.keys(S.provBBox).filter(p => isAllowed(S.cpro2cca[p]) && !S.sscc.has(p)).sort((a, b) => d2(S.provBBox[a]) - d2(S.provBBox[b]));
+  if (!queue.length) return Promise.resolve();
+  const total = queue.length; let done = 0, last = 0;
+  const step = () => { done++; const now = performance.now(); if (now - last > 600 || done === total) { last = now; if (S.level === "secciones" && !S.focus) pushSscc(); } if (S.level === "secciones" && !S.focus) status(done < total ? `Cargando secciones… ${done} de ${total} provincias` : "", done < total ? 0 : 1); };
+  const worker = async () => { while (queue.length) { const p = queue.shift(); try { await loadProvSscc(p); } catch (e) { console.warn(p, e); } step(); } };
+  ssccAll = Promise.all(Array.from({ length: 6 }, worker)).then(() => { pushSscc(); ssccAll = null; });
+  return ssccAll;
 }
 function pushSscc() {
   const feats = [];
@@ -653,11 +682,11 @@ function updateCounts() {
     applyFilters();
   });
   const unit = S.focus ? (S.focusView === "municipios" ? `municipios de ${S.meta.provincias[S.focus.cpro]}` : `secciones de ${S.focus.name}`) :
-    { municipios: "municipios", secciones: "secciones cargadas", provincias: "provincias", ccaa: "comunidades" }[S.level];
+    { municipios: "municipios", secciones: "secciones", provincias: "provincias", ccaa: "comunidades" }[S.level];
   const vis = filterable ? ps.filter(p => S.filters.has(p ?? 5)).length : ps.length;
   document.getElementById("count").textContent = vis === ps.length ? `${fmtN.format(ps.length)} ${unit}` : `${fmtN.format(vis)} de ${fmtN.format(ps.length)} ${unit}`;
   document.getElementById("dl-hint").textContent = S.focus ? (S.focusView === "municipios" ? `Exporta los municipios de ${S.meta.provincias[S.focus.cpro]} con las prioridades activas.` : `Exporta las secciones de ${S.focus.name} con las prioridades activas.`)
-    : S.level === "secciones" ? "Incluye todas las secciones de tus comunidades, no solo las cargadas." : "Exporta lo que ves: nivel, comunidades del rol y prioridades activas.";
+    : S.level === "secciones" ? "Exporta todas las secciones de tus comunidades con las prioridades activas." : "Exporta lo que ves: nivel, comunidades del rol y prioridades activas.";
 }
 function chipRanges(lv) {
   if (lv === "provincias") return S.meta.pesos_provincia.map(w => `peso ×${w.toFixed(2).replace(".", ",")}`);
