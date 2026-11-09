@@ -202,11 +202,43 @@ select, input[type="search"] {
 .maplibregl-ctrl-group { border-radius: 4px; box-shadow: 0 4px 14px rgba(0,25,44,.12) !important; }
 .maplibregl-ctrl-attrib { font-size: 10px; }
 
+/* Ficha de móvil (sustituye al popup flotante) y botón de volver */
+#mcard { display: none; }
+#m-back { display: none; }
+
+/* Tablet */
+@media (max-width: 1100px) and (min-width: 761px) {
+  #panel { width: 270px; }
+  .title .sub { display: none; }
+}
+/* Móvil: cabecera compacta, panel como hoja inferior, ficha abajo en lugar de popup */
 @media (max-width: 760px) {
-  .title .sub, .who span, .client { display: none; }
-  .logo-ateneo { height: 22px; } .logo-fa { height: 32px; width: 32px; }
-  #panel { width: calc(100% - 32px); max-height: 46%; }
+  #app { grid-template-rows: 52px 1fr; }
+  header { padding: 0 12px; gap: 10px; }
+  .brand { gap: 12px; }
+  .title .sub, .who, .client { display: none; }
+  .title h1 { font-size: 13px; }
+  .logo-ateneo { height: 22px; } .logo-fa { height: 30px; width: 30px; }
+  #panel { top: auto; left: 0; right: 0; bottom: 0; width: 100%; max-height: 74%; border-radius: 14px 14px 0 0; box-shadow: 0 -8px 30px rgba(0,25,44,.22); }
+  #panel::before { content: ""; display: block; width: 40px; height: 4px; border-radius: 2px; background: #C9D1DE; margin: 8px auto 0; flex: none; }
+  .sec { padding: 12px 16px; }
+  #panel-open, #m-back { top: auto; bottom: 18px; padding: 11px 16px; font-size: 14px; border-radius: 22px; }
+  #panel-open { left: 12px; }
+  #m-back { left: auto; right: 12px; position: absolute; z-index: 3; align-items: center; gap: 6px; border: 0; background: var(--blanco); color: var(--oscuro); font-weight: 600; box-shadow: 0 6px 20px rgba(0,25,44,.2); cursor: pointer; }
+  body.focused #panel.closed ~ #m-back { display: inline-flex; }
   #count { display: none; }
+  .maplibregl-ctrl-zoom-in, .maplibregl-ctrl-zoom-out { display: none !important; }
+  .maplibregl-ctrl-top-right .maplibregl-ctrl { margin: 10px 10px 0 0; }
+  .maplibregl-ctrl-group button { width: 40px; height: 40px; }
+  .maplibregl-popup { display: none; }
+  #mcard { position: absolute; left: 0; right: 0; bottom: 0; max-height: 50%; overflow-y: auto; z-index: 6; background: var(--blanco); border-radius: 14px 14px 0 0; box-shadow: 0 -8px 30px rgba(0,25,44,.25); }
+  #mcard.on { display: block; }
+  #mcard .pp { width: 100%; }
+  #mcard .pp-h { border-radius: 14px 14px 0 0; padding: 14px 48px 12px 16px; position: sticky; top: 0; z-index: 1; }
+  #mcard .x { position: absolute; top: 8px; right: 8px; z-index: 2; width: 36px; height: 36px; border: 0; background: transparent; color: var(--blanco); font-size: 24px; cursor: pointer; }
+  #status { top: 10px; max-width: calc(100% - 24px); text-align: center; }
+  .seg button { padding: 9px 2px; }
+  .chip { padding: 8px 6px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
@@ -275,6 +307,8 @@ select, input[type="search"] {
     </aside>
 
     <button type="button" id="panel-open" aria-controls="panel"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 3.5h10M4 7h6M5.5 10.5h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Filtros</button>
+    <button type="button" id="m-back"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M8.5 2.5 4 7l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>España</button>
+    <div id="mcard" role="dialog" aria-label="Detalle"></div>
     <div id="count" class="num"></div>
     <div id="status" role="status"></div>
     <div id="fatal" role="alert"><div><b>Sin acceso</b><p id="fatal-txt" class="hint"></p><a class="hint" href="/cdn-cgi/access/logout">Entrar con otro email</a></div></div>
@@ -296,8 +330,10 @@ const LV_HINT = {
 };
 const fmtN = new Intl.NumberFormat("es-ES", { useGrouping: "always" });
 const f1 = v => v == null ? "—" : v.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const isMobile = () => matchMedia("(max-width: 760px)").matches;
+const closePanelMobile = () => { if (isMobile()) document.getElementById("panel").classList.add("closed"); };
 const panelOpen = () => !document.getElementById("panel").classList.contains("closed");
-const PAD = () => (innerWidth < 760 ? { top: 20, bottom: 20, left: 20, right: 20 } : { top: 40, bottom: 40, left: panelOpen() ? 330 : 60, right: 60 });
+const PAD = () => (isMobile() ? { top: 24, bottom: 80, left: 16, right: 16 } : { top: 40, bottom: 40, left: panelOpen() ? 330 : 60, right: 60 });
 
 // ── Estado ────────────────────────────────────────────────────────
 const S = {
@@ -339,7 +375,8 @@ function bboxOf(geom) {
 }
 const unionB = bs => bs.reduce((a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])]);
 const fit = (bb, opts = {}) => map.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: PAD(), duration: 800, ...opts });
-const popPad = () => (innerWidth < 760 ? PAD() : { ...PAD(), right: 380 });
+// Con ficha abierta, en el móvil el encuadre deja libre la mitad de abajo
+const popPad = () => (isMobile() ? { ...PAD(), top: 16, bottom: Math.round(innerHeight * 0.5) + 8 } : innerWidth <= 1100 ? PAD() : { ...PAD(), right: 380 });
 const homeBB = () => viewSet() ? unionB(viewSet().map(c => S.ccaaBBox[c])) : [-9.6, 35.8, 4.5, 43.9];
 
 // Velo: un rectángulo que cubre todo con la zona enfocada como agujero
@@ -371,7 +408,7 @@ async function init() {
       layers: [{ id: "bg", type: "background", paint: { "background-color": "#EEF2F8" } }]
     },
     bounds: [[-9.6, 35.8], [4.5, 43.9]], fitBoundsOptions: { padding: PAD() },
-    maxBounds: [[-22, 25], [9, 46.5]], minZoom: 4, maxZoom: 17, maxPitch: 70, attributionControl: false
+    maxBounds: [[-34, 14], [24, 54]], minZoom: 3, maxZoom: 17, maxPitch: 70, attributionControl: false
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
   map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "Secciones y límites: INE 2025. Datos: Ateneo del Dato." }));
@@ -676,6 +713,7 @@ function setFocus(fc) {
   document.getElementById("focus-name").textContent = fc.name;
   bar.hidden = false;
   document.getElementById("scale-box").hidden = false;
+  document.body.classList.add("focused"); closePanelMobile();
   setFocusView(S.focusView);
 }
 function clearFocus(restore = true) {
@@ -685,6 +723,7 @@ function clearFocus(restore = true) {
   map.getSource("veil").setData(EMPTY); map.getSource("focus").setData(EMPTY);
   document.getElementById("focus-bar").hidden = true;
   document.getElementById("scale-box").hidden = true;
+  document.body.classList.remove("focused");
   setScale("espana");
   if (restore) { closePopup(); setLevel("provincias"); fit(homeBB()); }
 }
@@ -793,7 +832,10 @@ const CHIP_NOTE = {
 
 // ── Popup ─────────────────────────────────────────────────────────
 let popup = null;
-function closePopup() { if (popup) { popup.remove(); popup = null; } }
+function closePopup() {
+  if (popup) { popup.remove(); popup = null; }
+  const c = document.getElementById("mcard"); c.classList.remove("on"); c.innerHTML = "";
+}
 function recordFor(src, id) {
   if (src === "mun") { const r = S.mun.rows[id]; return r && { ...rowObj(S.mun.cols, r), tipo: "Municipio", loc: `${S.meta.provincias[id.slice(0, 2)]}, ${ccaaName(S.cpro2cca[id.slice(0, 2)])}` }; }
   if (src === "sscc") {
@@ -808,7 +850,14 @@ function recordFor(src, id) {
 function openPopup(src, id, lngLat, anchor) {
   const d = recordFor(src, id); if (!d) return;
   closePopup();
-  popup = new maplibregl.Popup({ maxWidth: "320px", offset: 10, focusAfterOpen: false, ...(anchor && innerWidth >= 760 ? { anchor } : {}) }).setLngLat(lngLat).setHTML(popupHTML(src, d)).addTo(map);
+  if (isMobile()) {   // en el móvil, ficha fija abajo
+    const c = document.getElementById("mcard");
+    c.innerHTML = `<button type="button" class="x" aria-label="Cerrar">×</button>` + popupHTML(src, d);
+    c.querySelector(".x").onclick = closePopup;
+    c.scrollTop = 0; c.classList.add("on"); closePanelMobile();
+    return;
+  }
+  popup = new maplibregl.Popup({ maxWidth: "320px", offset: 10, focusAfterOpen: false, ...(anchor ? { anchor } : {}) }).setLngLat(lngLat).setHTML(popupHTML(src, d)).addTo(map);
   requestAnimationFrame(keepPopupClear);
 }
 // Si el popup cae debajo del panel o se sale del mapa, se desplaza el mapa lo justo para verlo entero
@@ -978,7 +1027,11 @@ function bindUI() {
   document.getElementById("dl").onclick = download;
   const panel = document.getElementById("panel");
   document.getElementById("panel-close").onclick = () => { panel.classList.add("closed"); document.getElementById("panel-open").focus(); };
-  document.getElementById("panel-open").onclick = () => { panel.classList.remove("closed"); document.getElementById("panel-close").focus(); };
+  document.getElementById("panel-open").onclick = () => { closePopup(); panel.classList.remove("closed"); document.getElementById("panel-close").focus(); };
+  document.getElementById("m-back").onclick = () => clearFocus(true);
+  if (isMobile()) panel.classList.add("closed");   // en el móvil se empieza viendo el mapa
+  // en el móvil, buscar un municipio cierra el panel para ver el resultado
+  map.on("click", () => { if (isMobile() && panelOpen()) panel.classList.add("closed"); });
 }
 
 init().catch(e => { console.error(e); fatal("No se han podido cargar los datos. Recarga la página."); });
