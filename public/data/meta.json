@@ -27,20 +27,13 @@
   "Baja": 2.87,
   "Nula": 0.15
  },
- "umbrales_municipio": {
-  "Máxima": 4.48,
-  "Alta": 2.91,
-  "Media": 1.57,
-  "Baja": 0.75,
-  "Nula": 0.04
- },
- "umbrales_ccaa": {
-  "Máxima": 6.82,
-  "Alta": 6.12,
-  "Media": 4.2,
-  "Baja": 2.98,
-  "Nula": 1.97
- },
+ "cortes": [
+  7.61,
+  6.66,
+  4.91,
+  2.87
+ ],
+ "tam_ref": 20000,
  "ccaa": [
   {
    "cca": "01",
@@ -265,5 +258,5 @@
  },
  "n_secciones": 36554,
  "seccionado": "INE 1/1/2025",
- "fuente": "prioridades_sscc.xlsx × Prioridad_provincias_FA_29N_Ateneo.xlsx (18/10/2026)"
+ "fuente": "prioridades_sscc.xlsx y Prioridad_provincias_FA_29N_Ateneo.xlsx (18/10/2026)"
 }

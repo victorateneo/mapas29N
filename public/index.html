@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mapa de prioridades · Ateneo del Dato</title>
+<title>Mapa de prioridades, Ateneo del Dato</title>
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -215,7 +215,7 @@ select, input[type="search"] {
     </div>
     <div class="title">
       <h1 class="display">Mapa de prioridades</h1>
-      <span class="sub">Generales 29N · España</span>
+      <span class="sub">Elecciones generales 29N</span>
     </div>
     <div class="who"><i class="dot" aria-hidden="true"></i><span id="who-txt">Rol: Ve todo</span></div>
   </header>
@@ -277,9 +277,9 @@ const P_COLOR = ["#00192C", "#0033FF", "#56A3FF", "#A9D5FF", "#D3D4CF", "#FFFFFF
 const P_TEXT  = ["#FFFFFF", "#FFFFFF", "#00192C", "#00192C", "#00192C", "#6C6D6D"];
 const pct = v => v == null ? "—" : f1(v * 100) + " %";
 const LV_HINT = {
-  ccaa: "Scoring final medio de la comunidad (ponderado por censo). Niveles repartidos entre las 19 comunidades.",
+  ccaa: "Prioridad de sus provincias, ponderada por población.",
   provincias: "Prioridad del comité según el modelo de escaños. Pincha en una para ver sus secciones censales.",
-  municipios: "Índice municipal: scoring medio de sus secciones × tamaño (log del censo).",
+  municipios: "Scoring medio de sus secciones, rebajado si el municipio es pequeño.",
   secciones: "Todas las secciones censales. Se cargan por provincia, primero las que tienes a la vista."
 };
 const fmtN = new Intl.NumberFormat("es-ES", { useGrouping: "always" });
@@ -308,6 +308,9 @@ const rowObj = (cols, row) => { const o = {}; cols.forEach((c, i) => o[c] = row[
 const status = (t, ms) => { const el = document.getElementById("status"); el.textContent = t; el.style.display = t ? "block" : "none"; if (ms) setTimeout(() => { if (el.textContent === t) el.style.display = "none"; }, ms); };
 function fatal(msg) { status(""); document.getElementById("fatal-txt").textContent = msg; document.getElementById("fatal").style.display = "flex"; }
 const isAllowed = cca => !S.allowed || S.allowed.has(cca);
+// Lo que se ve: el acceso del rol y, si se ha elegido, solo esa comunidad
+const inView = cca => isAllowed(cca) && (!S.sel || S.sel === cca);
+const viewSet = () => S.sel ? [S.sel] : S.allowed ? [...S.allowed] : null;
 const ccaaName = c => S.meta.ccaa.find(x => x.cca === c)?.name ?? "";
 const EMPTY = { type: "FeatureCollection", features: [] };
 const prioColor = ["match", ["get", "_p"], 0, P_COLOR[0], 1, P_COLOR[1], 2, P_COLOR[2], 3, P_COLOR[3], 4, P_COLOR[4], P_COLOR[5]];
@@ -320,7 +323,7 @@ function bboxOf(geom) {
 const unionB = bs => bs.reduce((a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])]);
 const fit = (bb, opts = {}) => map.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: PAD(), duration: 800, ...opts });
 const popPad = () => (innerWidth < 760 ? PAD() : { ...PAD(), right: 380 });
-const homeBB = () => S.allowed ? unionB([...S.allowed].map(c => S.ccaaBBox[c])) : [-9.6, 35.8, 4.5, 43.9];
+const homeBB = () => viewSet() ? unionB(viewSet().map(c => S.ccaaBBox[c])) : [-9.6, 35.8, 4.5, 43.9];
 
 // Velo: un rectángulo que cubre todo con la zona enfocada como agujero
 function veilFor(geom) {
@@ -354,7 +357,7 @@ async function init() {
     maxBounds: [[-22, 25], [9, 46.5]], minZoom: 4, maxZoom: 17, maxPitch: 70, attributionControl: false
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-  map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "Secciones y límites: INE 2025 · Datos: Ateneo del Dato" }));
+  map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "Secciones y límites: INE 2025. Datos: Ateneo del Dato." }));
   map.addControl(new HomeControl(), "top-right");
   map.addControl(new ThreeDControl(), "top-right");
   await new Promise(r => map.on("load", r));
@@ -510,8 +513,7 @@ function recenter() {
   if (S.d3) { toggle3D(false); map.stop(); }
   map.setPitch(0); map.setBearing(0);
   if (S.focus) return fit(bboxOf(S.focus.geom), { padding: PAD() });
-  const c = document.getElementById("sel-ccaa").value;
-  fit(c ? S.ccaaBBox[c] : homeBB());
+  fit(homeBB());
 }
 
 // Qué hay bajo el cursor, según el modo
@@ -520,7 +522,7 @@ function pickFeature(pt) {
   const fv = S.focusView === "municipios" ? "mun-fill" : "sscc-fill";
   if (S.focus) layers = [fv, "prov-fill"];
   else layers = { ccaa: ["ccaa-fill"], provincias: ["prov-fill"], municipios: ["mun-fill"], secciones: ["sscc-fill"] }[S.level];
-  const fs = map.queryRenderedFeatures(pt, { layers }).filter(f => isAllowed(f.properties._cca));
+  const fs = map.queryRenderedFeatures(pt, { layers }).filter(f => inView(f.properties._cca));
   if (!fs.length) return null;
   if (S.focus) {
     const sec = fs.find(f => f.layer.id === fv && f.properties._cpro === S.focus.cpro);
@@ -570,7 +572,7 @@ let ssccAll = null;
 function ensureSecciones() {
   if (ssccAll) return ssccAll;
   const c = map.getCenter(), d2 = bb => ((bb[0] + bb[2]) / 2 - c.lng) ** 2 + ((bb[1] + bb[3]) / 2 - c.lat) ** 2;
-  const queue = Object.keys(S.provBBox).filter(p => isAllowed(S.cpro2cca[p]) && !S.sscc.has(p)).sort((a, b) => d2(S.provBBox[a]) - d2(S.provBBox[b]));
+  const queue = Object.keys(S.provBBox).filter(p => inView(S.cpro2cca[p]) && !S.sscc.has(p)).sort((a, b) => d2(S.provBBox[a]) - d2(S.provBBox[b]));
   if (!queue.length) return Promise.resolve();
   const total = queue.length; let done = 0, last = 0;
   const step = () => { done++; const now = performance.now(); if (now - last > 600 || done === total) { last = now; if (S.level === "secciones" && !S.focus) pushSscc(); } if (S.level === "secciones" && !S.focus) status(done < total ? `Cargando secciones… ${done} de ${total} provincias` : "", done < total ? 0 : 1); };
@@ -580,7 +582,7 @@ function ensureSecciones() {
 }
 function pushSscc() {
   const feats = [];
-  for (const [c, v] of S.sscc) if (isAllowed(S.cpro2cca[c])) feats.push(...v.fc.features);
+  for (const [c, v] of S.sscc) if (inView(S.cpro2cca[c])) feats.push(...v.fc.features);
   map.getSource("sscc").setData({ type: "FeatureCollection", features: feats });
   updateCounts();
 }
@@ -609,6 +611,7 @@ async function setLevel(lv) {
 // Foco en una provincia: secciones de esa provincia, el resto velado
 async function focusProvince(cpro, lngLat) {
   if (!isAllowed(S.cpro2cca[cpro])) return;
+  pickCcaa(S.cpro2cca[cpro]);
   closePopup();
   const f = S.prov.features.find(x => x.properties._id === cpro);
   setFocus({ type: "prov", cpro, id: cpro, geom: f.geometry, name: S.meta.provincias[cpro] });
@@ -624,6 +627,7 @@ async function focusMunicipio(cumun) {
   await loadMunicipios();
   const f = S.munFC.features.find(x => x.properties._id === cumun); if (!f) return;
   const cpro = cumun.slice(0, 2), bb = bboxOf(f.geometry);
+  pickCcaa(S.cpro2cca[cpro]);
   closePopup();
   setFocus({ type: "mun", cpro, id: cumun, geom: f.geometry, name: S.mun.rows[cumun][0] });
   fit(bb, { maxZoom: 13, padding: popPad() });
@@ -651,7 +655,7 @@ function setFocus(fc) {
   map.getSource("focus").setData({ type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: fc.geom }] });
   S.focusView = S.focusView || "secciones";
   const bar = document.getElementById("focus-bar");
-  document.getElementById("focus-type").textContent = fc.type === "prov" ? "Provincia" : `Municipio · ${S.meta.provincias[fc.cpro]}`;
+  document.getElementById("focus-type").textContent = fc.type === "prov" ? "Provincia" : `Municipio en ${S.meta.provincias[fc.cpro]}`;
   document.getElementById("focus-name").textContent = fc.name;
   bar.hidden = false;
   setFocusView(S.focusView);
@@ -665,22 +669,30 @@ function clearFocus(restore = true) {
   if (restore) { closePopup(); setLevel("provincias"); fit(homeBB()); }
 }
 
+// Al abrir una provincia o municipio de otra comunidad, la selección pasa a esa comunidad
+function pickCcaa(cca) {
+  if (!S.sel || S.sel === cca) return;
+  const sel = document.getElementById("sel-ccaa");
+  if ([...sel.options].some(o => o.value === cca)) { sel.value = cca; S.sel = cca; } else { sel.value = ""; S.sel = null; }
+  pushSscc(); applyFilters();
+}
 function applyFilters() {
-  const roleF = S.allowed ? ["in", ["get", "_cca"], ["literal", [...S.allowed]]] : true;
+  const vs = viewSet();
+  const roleF = vs ? ["in", ["get", "_cca"], ["literal", vs]] : true;
   const prioF = ["in", ["get", "_p"], ["literal", [...S.filters]]];
   const focusF = S.focus ? ["==", ["get", "_cpro"], S.focus.cpro] : true;
   for (const id of ["mun-fill", "mun-line"]) map.setFilter(id, ["all", roleF, prioF, focusF]);
   for (const id of ["sscc-fill", "sscc-line"]) map.setFilter(id, ["all", roleF, prioF, focusF]);
   map.setFilter("ccaa-fill", ["all", roleF, prioF]);
   map.setFilter("prov-fill", S.focus ? ["all", roleF] : ["all", roleF, prioF]);
-  map.setFilter("mask", S.allowed ? ["!", ["in", ["get", "_cca"], ["literal", [...S.allowed]]]] : ["boolean", false]);
+  map.setFilter("mask", vs ? ["!", ["in", ["get", "_cca"], ["literal", vs]]] : ["boolean", false]);
   updateCounts();
 }
 function applyRole(me) {
   S.role = me.rol;
   S.allowed = me.ccaa === "*" ? null : new Set(me.ccaa);
   document.getElementById("who-txt").textContent = me.email;
-  document.getElementById("me-txt").textContent = `${me.email} · ${me.nombre}`;
+  document.getElementById("me-txt").innerHTML = `${me.email}<br>Rol: ${me.nombre}`;
   const sel = document.getElementById("sel-ccaa");
   const list = S.meta.ccaa.filter(c => isAllowed(c.cca));
   sel.innerHTML = (S.allowed && list.length === 1 ? "" : `<option value="">${S.allowed ? "Todas mis comunidades" : "Toda España"}</option>`) +
@@ -704,16 +716,16 @@ function levelRows() {
   }
   if (S.level === "municipios" && S.mun) {
     const iP = S.mun.cols.indexOf("pidx"), iC = S.mun.cols.indexOf("cpro");
-    return Object.values(S.mun.rows).filter(r => isAllowed(S.cpro2cca[r[iC]])).map(r => r[iP]);
+    return Object.values(S.mun.rows).filter(r => inView(S.cpro2cca[r[iC]])).map(r => r[iP]);
   }
   if (S.level === "secciones") {
     const out = [];
-    for (const [c, v] of S.sscc) if (isAllowed(S.cpro2cca[c])) { const iP = v.data.cols.indexOf("pidx"); for (const r of Object.values(v.data.rows)) out.push(r[iP]); }
+    for (const [c, v] of S.sscc) if (inView(S.cpro2cca[c])) { const iP = v.data.cols.indexOf("pidx"); for (const r of Object.values(v.data.rows)) out.push(r[iP]); }
     return out;
   }
   const iP = S.terr.cols.indexOf("pidx");
-  if (S.level === "provincias") return Object.entries(S.terr.provincias).filter(([c]) => isAllowed(S.cpro2cca[c])).map(([, r]) => r[iP]);
-  return Object.entries(S.terr.ccaa).filter(([c]) => isAllowed(c)).map(([, r]) => r[iP]);
+  if (S.level === "provincias") return Object.entries(S.terr.provincias).filter(([c]) => inView(S.cpro2cca[c])).map(([, r]) => r[iP]);
+  return Object.entries(S.terr.ccaa).filter(([c]) => inView(c)).map(([, r]) => r[iP]);
 }
 function updateCounts() {
   if (!S.terr) return;
@@ -721,9 +733,9 @@ function updateCounts() {
   const filterable = true;
   const lv = S.focus ? S.focusView : S.level, rng = chipRanges(lv);
   document.getElementById("chips-lbl").textContent = { provincias: "Prioridad provincial", secciones: "Prioridad de la sección", municipios: "Prioridad municipal", ccaa: "Prioridad autonómica" }[lv];
-  document.getElementById("chips-note").innerHTML = CHIP_NOTE[lv] + (S.allowed ? `<br><span class="mut-sw"></span>Gris: fuera de tu acceso.` : "");
+  document.getElementById("chips-note").innerHTML = CHIP_NOTE[lv] + (S.allowed || S.sel ? `<br><span class="mut-sw"></span>Gris: fuera de ${S.sel ? "la comunidad elegida" : "tu acceso"}.` : "");
   const chips = document.getElementById("chips");
-  chips.innerHTML = PRIOS.map((p, i) => i === 5 && !cnt[5] ? "" : `<button class="chip" data-i="${i}" aria-pressed="${S.filters.has(i)}" title="${rng[i] ? (lv === "provincias" ? "Peso " : "Valor ") + rng[i].replace("peso ", "") : ""}"><span class="sw" style="background:${P_COLOR[i]}"></span><span>${p}</span><span class="n num">${fmtN.format(cnt[i])}</span></button>`).join("");
+  chips.innerHTML = PRIOS.map((p, i) => i === 5 && !cnt[5] ? "" : `<button class="chip" data-i="${i}" aria-pressed="${S.filters.has(i)}" title="${rng[i] ? (lv === "provincias" || lv === "ccaa" ? "Peso " : "Valor ") + rng[i].replace("peso ", "") : ""}"><span class="sw" style="background:${P_COLOR[i]}"></span><span>${p}</span><span class="n num">${fmtN.format(cnt[i])}</span></button>`).join("");
   chips.querySelectorAll(".chip").forEach(b => b.onclick = () => {
     const i = +b.dataset.i;
     if (S.filters.has(i)) { if (S.filters.size > 1) S.filters.delete(i); } else S.filters.add(i);
@@ -733,34 +745,37 @@ function updateCounts() {
     { municipios: "municipios", secciones: "secciones", provincias: "provincias", ccaa: "comunidades" }[S.level];
   const vis = filterable ? ps.filter(p => S.filters.has(p ?? 5)).length : ps.length;
   document.getElementById("count").textContent = vis === ps.length ? `${fmtN.format(ps.length)} ${unit}` : `${fmtN.format(vis)} de ${fmtN.format(ps.length)} ${unit}`;
-  document.getElementById("dl-hint").textContent = S.focus ? (S.focusView === "municipios" ? `Exporta los municipios de ${S.meta.provincias[S.focus.cpro]} con las prioridades activas.` : `Exporta las secciones de ${S.focus.name} con las prioridades activas.`)
-    : S.level === "secciones" ? "Exporta todas las secciones de tus comunidades con las prioridades activas." : "Exporta lo que ves: nivel, comunidades del rol y prioridades activas.";
+  const lvN = { secciones: "las secciones", municipios: "los municipios", provincias: "las provincias", ccaa: "las comunidades" }[lv];
+  const donde = S.focus ? (S.focus.type === "mun" ? (lv === "municipios" ? `el municipio de ${S.focus.name}` : `de ${S.focus.name}`) : `de ${S.focus.name}`)
+    : S.sel ? `de ${ccaaName(S.sel)}` : S.allowed ? "de tus comunidades" : "de España";
+  const prios = S.filters.size === 6 || S.filters.size === 5 && !S.filters.has(5) ? "todas las prioridades" : [...S.filters].filter(i => i < 5).sort().map(i => PRIOS[i]).join(", ");
+  document.getElementById("dl-hint").textContent = S.focus?.type === "mun" && lv === "municipios" ? `Exporta ${donde}.` : `Exporta ${lvN} ${donde}, con ${prios === "todas las prioridades" ? prios : "prioridad " + prios}.`;
 }
 function chipRanges(lv) {
-  if (lv === "provincias") return S.meta.pesos_provincia.map(w => `peso ×${w.toFixed(2).replace(".", ",")}`);
-  const u = S.meta[{ secciones: "umbrales_seccion", municipios: "umbrales_municipio", ccaa: "umbrales_ccaa" }[lv]];
-  return ["≥ " + f1(u["Máxima"]), f1(u["Alta"]) + "–" + f1(u["Máxima"]), f1(u["Media"]) + "–" + f1(u["Alta"]), f1(u["Baja"]) + "–" + f1(u["Media"]), "< " + f1(u["Baja"]), ""];
+  if (lv === "provincias" || lv === "ccaa") return S.meta.pesos_provincia.map(w => `peso ×${w.toFixed(2).replace(".", ",")}`);
+  const c = S.meta.cortes;
+  return ["≥ " + f1(c[0]), f1(c[1]) + "–" + f1(c[0]), f1(c[2]) + "–" + f1(c[1]), f1(c[3]) + "–" + f1(c[2]), "< " + f1(c[3]), ""];
 }
 const CHIP_NOTE = {
   provincias: "Máxima: decisión del comité. Alta: escaño en el filo en el modelo del 18/10. Media y Baja: su siguiente escaño entra con FA ≤ 9 % o ≤ 13 % nacional. El peso multiplica el scoring de sus secciones.",
   secciones: "Scoring final = scoring de la sección × peso de su provincia. Reparto 10/10/20/30/30 % en España.",
-  municipios: "Índice 0–10 = scoring medio × log del censo. Reparto 10/10/20/30/30 % entre municipios.",
-  ccaa: "Scoring final medio ponderado por censo. Reparto entre las 19 comunidades."
+  municipios: "Scoring medio de sus secciones × factor de tamaño (1 a partir de 20.000 electores, menos si es más pequeño). Mismos cortes que las secciones: un municipio es Máxima solo si sus secciones lo son de media.",
+  ccaa: "Media de la prioridad de sus provincias, ponderada por población. Una comunidad de una sola provincia tiene la prioridad de esa provincia."
 };
 
 // ── Popup ─────────────────────────────────────────────────────────
 let popup = null;
 function closePopup() { if (popup) { popup.remove(); popup = null; } }
 function recordFor(src, id) {
-  if (src === "mun") { const r = S.mun.rows[id]; return r && { ...rowObj(S.mun.cols, r), tipo: "Municipio", loc: `${S.meta.provincias[id.slice(0, 2)]} · ${ccaaName(S.cpro2cca[id.slice(0, 2)])}` }; }
+  if (src === "mun") { const r = S.mun.rows[id]; return r && { ...rowObj(S.mun.cols, r), tipo: "Municipio", loc: `${S.meta.provincias[id.slice(0, 2)]}, ${ccaaName(S.cpro2cca[id.slice(0, 2)])}` }; }
   if (src === "sscc") {
     const c = id.slice(0, 2), v = S.sscc.get(c), r = v && v.data.rows[id];
-    if (!r) return { tipo: "Sección censal", name: S.mun?.rows[id.slice(0, 5)]?.[0] ?? id, code: `Distrito ${id.slice(5, 7)} · Sección ${id.slice(7)}`, loc: S.meta.provincias[c], missing: true };
+    if (!r) return { tipo: "Sección censal", name: S.mun?.rows[id.slice(0, 5)]?.[0] ?? id, code: `Distrito ${id.slice(5, 7)}, sección ${id.slice(7)}`, loc: S.meta.provincias[c], missing: true };
     const o = rowObj(v.data.cols, r), m = S.mun?.rows[o.cumun];
-    return { ...o, peso: v.data.peso, tipo: "Sección censal", name: m ? m[0] : o.cumun, code: `Distrito ${id.slice(5, 7)} · Sección ${id.slice(7)}`, loc: `${S.meta.provincias[c]} · ${ccaaName(S.cpro2cca[c])}` };
+    return { ...o, peso: v.data.peso, tipo: "Sección censal", name: m ? m[0] : o.cumun, code: `Distrito ${id.slice(5, 7)}, sección ${id.slice(7)}`, loc: `${S.meta.provincias[c]}, ${ccaaName(S.cpro2cca[c])}` };
   }
   if (src === "prov") { const r = S.terr.provincias[id]; return { ...rowObj(S.terr.cols, r), m: r[r.length - 1], tipo: "Provincia", loc: ccaaName(S.cpro2cca[id]) }; }
-  if (src === "ccaa") { const r = S.terr.ccaa[id]; return { ...rowObj(S.terr.cols, r), tipo: "Comunidad autónoma", loc: `${S.meta.ccaa.find(c => c.cca === id).provincias.length} provincias` }; }
+  if (src === "ccaa") { const r = S.terr.ccaa[id]; return { ...rowObj(S.terr.cols, r), peso_medio: r[r.length - 1], tipo: "Comunidad autónoma", loc: `${S.meta.ccaa.find(c => c.cca === id).provincias.length} provincias` }; }
 }
 function openPopup(src, id, lngLat, anchor) {
   const d = recordFor(src, id); if (!d) return;
@@ -795,7 +810,7 @@ function cmpRow(name, a, b) {
   return `<div class="cr"><span class="nm">${name}</span><span class="track"><span class="seg2" style="left:${pos(lo)};width:calc(${pos(hi)} - ${pos(lo)})"></span><i class="d a" style="left:${pos(a)}"></i><i class="d b" style="left:${pos(b)}"></i></span><span class="dv num">${delta(a, b)}</span></div>`;
 }
 function popupHTML(src, d) {
-  const head = `<div class="pp-h"><span class="t">${d.tipo}</span><span class="n">${d.name}</span><span class="loc">${d.code ? d.code + " · " : ""}${d.loc ?? ""}</span></div>`;
+  const head = `<div class="pp-h"><span class="t">${d.tipo}</span><span class="n">${d.name}</span><span class="loc">${d.code ? d.code + "<br>" : ""}${d.loc ?? ""}</span></div>`;
   if (d.missing) return `<div class="pp">${head}<div class="pp-b"><p class="hint">Sin datos para esta sección.</p></div></div>`;
   const pi = d.pidx ?? 5, agg = src !== "sscc";
   const lab = src === "prov" ? S.meta.niveles_provincia[pi] : PRIOS[pi];
@@ -803,7 +818,8 @@ function popupHTML(src, d) {
   let prio = `<div class="prio"><span class="pill" style="background:${P_COLOR[pi]};color:${P_TEXT[pi]};${pi === 5 ? "border:1px solid #D3D4CF" : ""}">${lab}</span>
       <div class="score"><div class="top"><span>${sLab}</span><b class="num">${d.score == null ? "—" : f1(d.score) + " / 10"}</b></div><div class="bar"><i style="width:${(d.score ?? 0) * 10}%;background:${pi >= 3 ? "#56A3FF" : P_COLOR[pi]}"></i></div></div></div>`;
   if (src === "sscc" && d.score_orig != null) prio += `<p class="hint">Scoring de la sección ${f1(d.score_orig)} × peso provincial ${d.peso.toFixed(2).replace(".", ",")}</p>`;
-  if (src === "mun" && d.score_medio != null) prio += `<p class="hint">Scoring medio de sus secciones <b>${f1(d.score_medio)}</b> × tamaño (${d.censo23 == null ? "—" : fmtN.format(d.censo23)} electores)</p>`;
+  if (src === "mun" && d.score_medio != null) prio += `<p class="hint">Scoring medio de sus secciones <b>${f1(d.score_medio)}</b> × factor de tamaño <b>${d.factor == null ? "—" : d.factor.toFixed(2).replace(".", ",")}</b> (${d.censo23 == null ? "—" : fmtN.format(d.censo23)} electores)</p>`;
+  if (src === "ccaa" && d.peso_medio != null) prio += `<p class="hint">Peso medio de sus provincias ×${d.peso_medio.toFixed(2).replace(".", ",")}, ponderado por población.</p>`;
   if (src === "prov" && d.m) {
     const m = d.m;
     prio += `<div class="k">
@@ -813,7 +829,7 @@ function popupHTML(src, d) {
       <div><span class="l">FA estimado</span><span class="v num">${pct(m.fa_est)}</span></div>
       <div><span class="l">En el filo</span><span class="v num">${pct(m.p_filo)}</span></div>
       <div><span class="l">Rival</span><span class="v">${m.rival ?? "—"}</span></div>
-    </div><p class="hint">Modelo de escaños: <b>${m.categoria_modelo}</b>${m.fa_nac_sig ? ` · el siguiente escaño entra con FA al ${f1(m.fa_nac_sig * 100)} % nacional` : ""}. Peso ×${m.peso.toFixed(2).replace(".", ",")}.</p>`;
+    </div><p class="hint">Modelo de escaños: <b>${m.categoria_modelo}</b>.${m.fa_nac_sig ? ` El siguiente escaño entra con FA al ${f1(m.fa_nac_sig * 100)} % nacional.` : ""} Peso ×${m.peso.toFixed(2).replace(".", ",")}.</p>`;
   }
   if (agg && d.dist) {
     const tot = d.dist.reduce((a, b) => a + b, 0) || 1;
@@ -872,18 +888,24 @@ async function buildCSV() {
   const VH = ["1.º 2023", "Censo 2023", "% Particip. 2023", "% Sumar 2023", "% PSOE 2023", "% Izq. nacionalista 2023", "% Izq. minoritaria 2023", "% Derechas 2023", "% Otros 2023", "1.º 2019", "Censo 2019", "% Particip. 2019", "% Sumar/UP 2019", "% PSOE 2019", "% Izq. nacionalista 2019", "% Izq. minoritaria 2019", "% Derechas 2019", "% Otros 2019"];
   if (lv === "secciones") {
     await loadMunicipios();
-    const provs = S.focus ? [S.focus.cpro] : Object.keys(S.meta.provincias).filter(c => isAllowed(S.cpro2cca[c]));
+    const provs = S.focus ? [S.focus.cpro] : Object.keys(S.meta.provincias).filter(c => inView(S.cpro2cca[c]));
     status(`Preparando ${provs.length} provincia${provs.length > 1 ? "s" : ""}…`);
     const datas = await Promise.all(provs.map(c => S.sscc.get(c)?.data ?? getJSON(API.ssccData(c))));
     lines.push(["Sección", "Comunidad", "Provincia", "Municipio", "Scoring sección", "Peso provincial", "Scoring final", "Prioridad", ...VH].join(";"));
     datas.forEach((data, i) => { const c = provs[i]; for (const [id, r] of Object.entries(data.rows)) { const o = rowObj(data.cols, r); if (!S.filters.has(o.pidx)) continue; if (S.focus?.type === "mun" && o.cumun !== S.focus.id) continue; lines.push([id, ccaaName(S.cpro2cca[c]), S.meta.provincias[c], S.mun.rows[o.cumun]?.[0] ?? "", o.score_orig, data.peso, o.score, PRIOS[o.pidx], ...VOTE.map(k => o[k])].map(csvCell).join(";")); } });
   } else if (lv === "municipios") {
-    lines.push(["Cód. municipio", "Municipio", "Comunidad", "Provincia", "Índice municipal (0-10)", "Prioridad", "Scoring final medio", "Nº secciones", "% censo en Máxima/Alta", ...VH].join(";"));
-    for (const [id, r] of Object.entries(S.mun.rows)) { const o = rowObj(S.mun.cols, r); if (!isAllowed(S.cpro2cca[o.cpro]) || !S.filters.has(o.pidx) || (S.focus && o.cpro !== S.focus.cpro)) continue; lines.push([id, o.name, ccaaName(S.cpro2cca[o.cpro]), S.meta.provincias[o.cpro], o.score, PRIOS[o.pidx], o.score_medio, o.n, o.pct_prior, ...VOTE.map(k => o[k])].map(csvCell).join(";")); }
+    lines.push(["Cód. municipio", "Municipio", "Comunidad", "Provincia", "Índice municipal (0-10)", "Prioridad", "Scoring final medio", "Factor tamaño", "Nº secciones", "% censo en Máxima/Alta", ...VH].join(";"));
+    for (const [id, r] of Object.entries(S.mun.rows)) {
+      const o = rowObj(S.mun.cols, r);
+      if (!inView(S.cpro2cca[o.cpro]) || !S.filters.has(o.pidx)) continue;
+      if (S.focus?.type === "prov" && o.cpro !== S.focus.cpro) continue;
+      if (S.focus?.type === "mun" && id !== S.focus.id) continue;
+      lines.push([id, o.name, ccaaName(S.cpro2cca[o.cpro]), S.meta.provincias[o.cpro], o.score, PRIOS[o.pidx], o.score_medio, o.factor, o.n, o.pct_prior, ...VOTE.map(k => o[k])].map(csvCell).join(";"));
+    }
   } else {
     const isP = lv === "provincias", src = isP ? S.terr.provincias : S.terr.ccaa;
     lines.push([isP ? "Cód. provincia" : "Cód. CCAA", isP ? "Provincia" : "Comunidad", "Scoring final medio", "Prioridad", "% censo en Máxima/Alta", "Secciones", ...PRIOS.map(p => `Secciones ${p}`), ...VH].join(";"));
-    for (const [id, r] of Object.entries(src)) { const o = rowObj(S.terr.cols, r), cca = isP ? S.cpro2cca[id] : id; if (!isAllowed(cca)) continue; lines.push([id, o.name, o.score, isP ? S.meta.niveles_provincia[o.pidx] : PRIOS[o.pidx], o.pct_prior, o.n, ...o.dist, ...VOTE.map(k => o[k])].map(csvCell).join(";")); }
+    for (const [id, r] of Object.entries(src)) { const o = rowObj(S.terr.cols, r), cca = isP ? S.cpro2cca[id] : id; if (!inView(cca) || !S.filters.has(o.pidx)) continue; lines.push([id, o.name, o.score, PRIOS[o.pidx], o.pct_prior, o.n, ...o.dist, ...VOTE.map(k => o[k])].map(csvCell).join(";")); }
   }
   status("");
   return "﻿" + lines.join("\r\n");
@@ -894,7 +916,8 @@ async function download() {
   try {
     const csv = await buildCSV();
     const n = csv.split("\r\n").length - 1;
-    const ambito = S.focus ? S.focus.name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\W+/g, "_").toLowerCase() : (S.role === "nacional" ? "espana" : S.role);
+    const slug = t => t.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\W+/g, "_").toLowerCase();
+    const ambito = S.focus ? slug(S.focus.name) : S.sel ? slug(ccaaName(S.sel)) : (S.role === "nacional" ? "espana" : S.role);
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     a.download = `prioridades_${S.focus ? S.focusView : S.level}_${ambito}_${new Date().toISOString().slice(0, 10)}.csv`;
@@ -909,7 +932,13 @@ async function download() {
 function bindUI() {
   document.querySelectorAll(".seg button").forEach(b => b.onclick = () => { setLevel(b.dataset.lv); });
   document.getElementById("focus-exit").onclick = () => clearFocus(true);
-  document.getElementById("sel-ccaa").onchange = e => { if (S.focus) clearFocus(false), setLevel(S.level); fit(e.target.value ? S.ccaaBBox[e.target.value] : homeBB()); };
+  document.getElementById("sel-ccaa").onchange = e => {
+    S.sel = e.target.value || null;
+    if (S.focus) clearFocus(false), setLevel(S.level);
+    pushSscc(); applyFilters(); closePopup();
+    if (S.level === "secciones") ensureSecciones();
+    fit(homeBB());
+  };
   const q = document.getElementById("q");
   q.onfocus = () => loadMunicipios();
   q.oninput = () => search(q.value);

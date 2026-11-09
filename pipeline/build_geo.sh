@@ -25,13 +25,17 @@ for f in "$TMP"/split/*.json; do
   $MS -i "$f" name=s -o "$GEO/sscc/$b.topo.json" format=topojson quantization=500000 >/dev/null
 done
 
-# 3. Municipios, provincias y comunidades (disolviendo secciones)
+# 3. Municipios, provincias y comunidades (disolviendo secciones).
+#    Provincias y comunidades incluyen los territorios sin sección (huecos_2025.py).
+python3 "$ROOT/pipeline/huecos_2025.py" "$SHP" "$TMP/prov_full.json"
 $MS -i "$TMP/base.topojson" -dissolve CUMUN copy-fields=NMUN,CPRO,CCA -simplify 6% weighted keep-shapes \
     -o "$GEO/municipios.topo.json" format=topojson quantization=200000
-$MS -i "$TMP/base.topojson" -dissolve CPRO copy-fields=NPRO,CCA -simplify 3% weighted keep-shapes \
+$MS -i "$TMP/prov_full.json" -dissolve CPRO copy-fields=NPRO,CCA -simplify 3% weighted keep-shapes \
     -o "$GEO/provincias.json" format=geojson precision=0.0001
-$MS -i "$TMP/base.topojson" -dissolve CCA copy-fields=NCA -simplify 3% weighted keep-shapes \
+$MS -i "$TMP/prov_full.json" -dissolve CCA copy-fields=NCA -simplify 3% weighted keep-shapes \
     -o "$GEO/ccaa.json" format=geojson precision=0.0001
+
+python3 "$ROOT/pipeline/cerrar_agujeros.py" "$GEO/provincias.json" "$GEO/ccaa.json"
 
 rm -rf "$TMP"
 echo "Geometrías listas en $GEO ($(ls "$GEO/sscc" | wc -l) provincias)"

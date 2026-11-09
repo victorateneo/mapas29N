@@ -1,4 +1,4 @@
-"""Cálculo fino de prioridades FA · Generales 29N.
+"""Cálculo fino de prioridades FA, generales 29N.
 
 Entradas
   prioridades_sscc.xlsx                      scoring original por sección (0–10)
@@ -11,10 +11,14 @@ Pasos
      de escaños.
   2. Scoring final de sección = scoring original × peso de su provincia.
   3. Niveles de sección: mismo reparto que el original (10/10/20/30/30 %) sobre el
-     scoring final, a escala de España.
-  4. Municipios y códigos postales: índice = scoring medio (ponderado por censo)
-     × log10(censo). Premia a la vez calidad y tamaño, sin que las ciudades grandes
-     se lo lleven todo. Se reescala a 0–10 y se reparte 10/10/20/30/30 %.
+     scoring final, a escala de España. Esos cortes son la escala común de todos los niveles.
+  4. Municipios y códigos postales: índice = scoring final medio (ponderado por censo)
+     × factor de tamaño, con factor = log10(censo) / log10(TAM_REF), como mucho 1.
+     A partir de TAM_REF electores no hay rebaja; por debajo, cuanto más pequeño, más
+     rebaja. El índice nunca supera el scoring medio y se clasifica con los mismos
+     cortes que las secciones: un municipio es Máxima solo si sus secciones lo son de media.
+  5. Comunidades: media de los pesos de sus provincias ponderada por censo, llevada al
+     nivel provincial más cercano. Una comunidad uniprovincial tiene el nivel de su provincia.
 """
 import json
 import math
@@ -42,7 +46,7 @@ XL2INE = {
 }
 ABSOLUTAS = {"28", "08", "46", "03"}            # decisión del comité
 # Prioridad provincial y peso
-#   Máxima: decisión del comité · Alta: «En el filo» / «A por uno más» en el modelo
+#   Máxima: decisión del comité. Alta: «En el filo» / «A por uno más» en el modelo
 #   Media / Baja: según el voto nacional de FA con el que entra su siguiente escaño
 NIVEL_PROV = [  # (nivel, etiqueta, peso)
     (0, "Máxima", 1.00), (1, "Alta", 0.90), (2, "Media", 0.80), (3, "Baja", 0.70), (4, "Nula", 0.55),
@@ -50,6 +54,7 @@ NIVEL_PROV = [  # (nivel, etiqueta, peso)
 CAT_ALTA = {"En el filo", "A por uno más", "Defender"}
 UMBRAL_MEDIA = 0.09   # siguiente escaño con FA ≤ 9 % nacional
 UMBRAL_BAJA = 0.13    # siguiente escaño con FA ≤ 13 % nacional
+TAM_REF = 20000       # electores a partir de los que el tamaño ya no rebaja el índice municipal
 
 def load_provincias(path):
     raw = pd.read_excel(path, sheet_name="Ranking", header=None)
@@ -131,16 +136,28 @@ def wavg(v, w):
     m = v.notna() & w.notna() & (w > 0)
     return float(np.average(v[m], weights=w[m])) if m.any() else np.nan
 
+def size_factor(censo):
+    if not censo or censo <= 1: return np.nan
+    return min(1.0, math.log10(censo) / math.log10(TAM_REF))
+
 def size_index(g):
-    """Índice de municipio / CP: scoring medio ponderado × log10(censo)."""
+    """Índice de municipio / CP: scoring medio ponderado × factor de tamaño (≤ 1)."""
     censo = g["censo23"].sum()
     s = wavg(g["score_final"], g["censo23"])
+    f = size_factor(censo)
     return pd.Series({
-        "n_secc": len(g), "censo": censo, "score_medio": s,
-        "indice_bruto": s * math.log10(censo) if censo and censo > 1 and not np.isnan(s) else np.nan,
+        "n_secc": len(g), "censo": censo, "score_medio": s, "factor": f,
+        "indice": s * f if not (np.isnan(s) or np.isnan(f)) else np.nan,
         "secc_max_alta": int((g["nivel"] <= 1).sum()),
         "pct_censo_max_alta": 100 * g.loc[g["nivel"] <= 1, "censo23"].sum() / censo if censo else np.nan,
     })
+
+def ccaa_level(peso_medio):
+    """Nivel provincial cuyo peso está más cerca (cortes en los puntos medios entre pesos)."""
+    w = [x for _, _, x in NIVEL_PROV]
+    for i in range(4):
+        if peso_medio >= (w[i] + w[i + 1]) / 2: return i
+    return 4
 
 def run(sscc_xlsx, prov_xlsx, cp_csv):
     prov = load_provincias(prov_xlsx)
@@ -162,17 +179,16 @@ def run(sscc_xlsx, prov_xlsx, cp_csv):
     d = d.merge(cp.rename(columns={"CUSEC": "cusec", "COD_POSTAL": "cp"}), on="cusec", how="left")
 
     # ── 3. Municipios ───────────────────────────────────────────────
+    t_sec = thresholds(d["score_final"])
     mun = d.groupby("cumun").apply(size_index, include_groups=False)
-    mun["indice"] = 10 * mun["indice_bruto"] / mun["indice_bruto"].max()
-    mun["nivel"] = levels_by_share(mun["indice"])
+    mun["nivel"] = mun["indice"].apply(lambda x: level_of(x, t_sec)).astype(int)
     first = d.groupby("cumun")[["mun_n", "prov_n", "ccaa_n", "cpro"]].first()
     mun = first.join(mun)
     thr_mun = cut_values(mun["indice"], mun["nivel"])
 
     # ── 4. Códigos postales ─────────────────────────────────────────
     cpd = d[d["cp"].notna()].groupby("cp").apply(size_index, include_groups=False)
-    cpd["indice"] = 10 * cpd["indice_bruto"] / cpd["indice_bruto"].max()
-    cpd["nivel"] = levels_by_share(cpd["indice"])
+    cpd["nivel"] = cpd["indice"].apply(lambda x: level_of(x, t_sec)).astype(int)
     # municipio principal (más censo) y nº de municipios del CP
     mp = d[d["cp"].notna()].groupby(["cp", "mun_n", "prov_n"])["censo23"].sum().reset_index()
     mp = mp.sort_values("censo23", ascending=False).groupby("cp").agg(
@@ -184,7 +200,6 @@ def run(sscc_xlsx, prov_xlsx, cp_csv):
     # Mismo código = mismo scoring; secciones nuevas o sin scoring = media de vecinas.
     # Los índices de municipio y CP de arriba usan solo las secciones con scoring real.
     s25 = json.load(open(IN("secciones_2025.json")))
-    t_sec = thresholds(d["score_final"])
     sc = rellenar(dict(zip(d["cusec"], d["score_final"])), s25)
     s25df = pd.DataFrame({"cusec": list(s25), "cumun": [x[0] for x in s25.values()],
                           "mun_n": [x[1] for x in s25.values()]})
@@ -195,7 +210,7 @@ def run(sscc_xlsx, prov_xlsx, cp_csv):
     vec_mun = {}
     for c, (m, _, ns) in s25.items():
         vec_mun.setdefault(m, set()).update(s25[n][0] for n in ns if s25[n][0] != m)
-    t_mun = thresholds(mun["indice"])
+    t_mun = t_sec
     for m in sorted(set(s25df["cumun"]) - set(mun.index)):
         xs = [mun.at[k, "indice"] for k in vec_mun.get(m, ()) if k in mun.index and pd.notna(mun.at[k, "indice"])]
         g = s25df[s25df["cumun"] == m]
@@ -205,7 +220,7 @@ def run(sscc_xlsx, prov_xlsx, cp_csv):
         mun.loc[m, "n_secc"] = len(g)
     mun["nivel"] = mun["nivel"].astype(int)
 
-    return dict(prov=prov, secc=d, secc25=s25df, mun=mun, cp=cpd,
+    return dict(prov=prov, secc=d, secc25=s25df, mun=mun, cp=cpd, t_sec=t_sec,
                 thr=dict(seccion=thr_sec, municipio=thr_mun, cp=thr_cp))
 
 if __name__ == "__main__":

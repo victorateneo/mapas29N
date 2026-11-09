@@ -9,7 +9,7 @@ Salida (out/data/):
 import json, math, os
 import numpy as np
 import pandas as pd
-from calculo_prioridades import IN, HERE, run, PRIOS, CUTS, levels_by_share, cut_values, wavg
+from calculo_prioridades import IN, HERE, run, PRIOS, CUTS, levels_by_share, cut_values, wavg, ccaa_level, NIVEL_PROV, TAM_REF
 
 OUT = os.path.join(HERE, "..", "public", "data")
 os.makedirs(f"{OUT}/sscc", exist_ok=True)
@@ -78,12 +78,12 @@ VOTE_COLS = ["n", "dist", "pct_prior", "score_medio", "v23", "censo23", "part23"
             ["v19", "censo19", "part19"] + [f"{p}19" for p in PCT]
 
 # ── Municipios ────────────────────────────────────────────────────────
-MUN_COLS = ["name", "cpro", "score", "pidx"] + VOTE_COLS
+MUN_COLS = ["name", "cpro", "score", "pidx", "factor"] + VOTE_COLS
 mun_rows = {}
 for cumun, m in mun.iterrows():
     g = d[d["cumun"] == cumun]
     v = votos(g) if len(g) else {c: None for c in VOTE_COLS}   # municipios nuevos de 2025: sin datos de 2023
-    mun_rows[cumun] = [m["mun_n"], cumun[:2], r(m["indice"]), int(m["nivel"])] + [v[c] for c in VOTE_COLS]
+    mun_rows[cumun] = [m["mun_n"], cumun[:2], r(m["indice"]), int(m["nivel"]), r(m.get("factor"))] + [v[c] for c in VOTE_COLS]
 json.dump({"cols": MUN_COLS, "rows": mun_rows}, open(f"{OUT}/municipios.json", "w"), ensure_ascii=False, separators=(",", ":"))
 
 # ── Provincias (nivel del comité/modelo) y CCAA ──────────────────────
@@ -94,12 +94,14 @@ for cpro, g in d.groupby("cpro"):
     v = votos(g); p = prov.loc[cpro]
     extra = {k: (r(p[k], 4) if isinstance(p[k], (float, np.floating)) else (int(p[k]) if isinstance(p[k], (int, np.integer)) else s(p[k]))) for k in P_EXTRA}
     provincias[cpro] = [g["prov_n"].iloc[0], v["score_medio"], int(p["nivel"])] + [v[c] for c in VOTE_COLS] + [cpro2cca[cpro], extra]
+# Comunidad: media de los pesos de sus provincias ponderada por censo -> nivel provincial más cercano
 ccaa_score = d.groupby("cca").apply(lambda g: wavg(g["score_final"], g["censo23"]), include_groups=False)
-ccaa_lv = levels_by_share(ccaa_score)
+ccaa_peso = d.groupby("cca").apply(lambda g: wavg(g["peso_prov"], g["censo23"]), include_groups=False)
+ccaa_lv = ccaa_peso.apply(ccaa_level)
 ccaa = {}
 for cca, g in d.groupby("cca"):
     v = votos(g)
-    ccaa[cca] = [g["ccaa_n"].iloc[0], r(ccaa_score[cca]), int(ccaa_lv[cca])] + [v[c] for c in VOTE_COLS]
+    ccaa[cca] = [g["ccaa_n"].iloc[0], r(ccaa_score[cca]), int(ccaa_lv[cca])] + [v[c] for c in VOTE_COLS] + [r(ccaa_peso[cca], 3)]
 json.dump({"cols": T_COLS, "provincias": provincias, "ccaa": ccaa}, open(f"{OUT}/territorios.json", "w"), ensure_ascii=False, separators=(",", ":"))
 
 # ── Meta ──────────────────────────────────────────────────────────────
@@ -107,13 +109,14 @@ meta = {
     "prioridades": PRIOS,
     "niveles_provincia": PRIOS,
     "pesos_provincia": [1.00, 0.90, 0.80, 0.70, 0.55],
-    "umbrales_seccion": R["thr"]["seccion"], "umbrales_municipio": R["thr"]["municipio"],
-    "umbrales_ccaa": cut_values(ccaa_score, ccaa_lv),
+    "umbrales_seccion": R["thr"]["seccion"],
+    "cortes": [round(x, 2) for x in R["t_sec"]],          # escala común: Máxima, Alta, Media, Baja (≥)
+    "tam_ref": TAM_REF,
     "ccaa": sorted([{"cca": k, "name": v[0], "provincias": sorted([p for p, c in cpro2cca.items() if c == k])} for k, v in ccaa.items()], key=lambda x: x["name"]),
     "provincias": {k: v[0] for k, v in provincias.items()},
     "n_secciones": int(len(s25)),
     "seccionado": "INE 1/1/2025",
-    "fuente": "prioridades_sscc.xlsx × Prioridad_provincias_FA_29N_Ateneo.xlsx (18/10/2026)",
+    "fuente": "prioridades_sscc.xlsx y Prioridad_provincias_FA_29N_Ateneo.xlsx (18/10/2026)",
 }
 json.dump(meta, open(f"{OUT}/meta.json", "w"), ensure_ascii=False, indent=1)
 print("ok", len(d), len(mun_rows), len(provincias), len(ccaa))

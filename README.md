@@ -1,4 +1,4 @@
-# Mapa de prioridades FA · Generales 29N
+# Mapa de prioridades FA, generales 29N
 
 Web de Ateneo del Dato con la prioridad territorial del Frente Amplio por comunidad, provincia, municipio y sección censal. Cada persona entra con su email y solo recibe los datos de las comunidades de su rol.
 
@@ -32,10 +32,16 @@ navegador ──► Cloudflare Access (PIN por email) ──► Worker «mapas29
    ```
 3. Commit y push: el Worker se republica solo en un minuto.
 
-Los roles se definen en el mismo fichero con códigos INE de comunidad (`"*"` = todas). Códigos: 01 Andalucía · 02 Aragón · 03 Asturias · 04 Illes Balears · 05 Canarias · 06 Cantabria · 07 Castilla y León · 08 Castilla-La Mancha · 09 Cataluña · 10 C. Valenciana · 11 Extremadura · 12 Galicia · 13 Madrid · 14 Murcia · 15 Navarra · 16 País Vasco · 17 La Rioja · 18 Ceuta · 19 Melilla.
+Los roles se definen en el mismo fichero con códigos INE de comunidad (`"*"` = todas). Códigos: 01 Andalucía, 02 Aragón, 03 Asturias, 04 Illes Balears, 05 Canarias, 06 Cantabria, 07 Castilla y León, 08 Castilla-La Mancha, 09 Cataluña, 10 C. Valenciana, 11 Extremadura, 12 Galicia, 13 Madrid, 14 Murcia, 15 Navarra, 16 País Vasco, 17 La Rioja, 18 Ceuta, 19 Melilla.
 
 ### Cambiar el cálculo de prioridades
-Los parámetros (pesos provinciales, umbrales, reparto 10/10/20/30/30) están al principio de `pipeline/calculo_prioridades.py`.
+Los parámetros (pesos provinciales, umbrales, reparto 10/10/20/30/30, tamaño de referencia de los municipios) están al principio de `pipeline/calculo_prioridades.py`.
+
+Lógica de niveles:
+- **Sección:** scoring × peso de su provincia. Los cortes del reparto 10/10/20/30/30 % son la escala común de todos los niveles.
+- **Municipio y código postal:** scoring medio de sus secciones × factor de tamaño. El factor es log10(censo)/log10(20.000) y como mucho vale 1. Se clasifican con los mismos cortes que las secciones.
+- **Provincia:** decisión del comité y modelo de escaños.
+- **Comunidad:** media de los pesos de sus provincias ponderada por censo, llevada al nivel provincial más cercano.
 
 ```bash
 pip install pandas openpyxl numpy

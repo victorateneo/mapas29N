@@ -6,7 +6,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.comments import Comment
-from calculo_prioridades import IN, HERE, run, NIVEL_PROV, ABSOLUTAS, UMBRAL_MEDIA, UMBRAL_BAJA
+from calculo_prioridades import IN, HERE, run, NIVEL_PROV, ABSOLUTAS, UMBRAL_MEDIA, UMBRAL_BAJA, TAM_REF
 
 R = run(IN("prioridades_sscc.xlsx"), IN("Prioridad_provincias_FA_29N_Ateneo.xlsx"), IN("cod_pos_sscc.csv"))
 prov, d, mun, cpd = R["prov"], R["secc"], R["mun"], R["cp"]
@@ -44,8 +44,8 @@ def nan(x):
 ws = wb.active; ws.title = "Método"
 ws.column_dimensions["A"].width = 2
 for c, w in zip("BCDEF", [30, 26, 12, 16, 70]): ws.column_dimensions[c].width = w
-ws["B2"] = "PRIORIDADES FA · GENERALES 29N"; ws["B2"].font = f_title
-ws["B3"] = "Ateneo del Dato · base para el mapa · celdas en azul sobre amarillo = editables"; ws["B3"].font = f_sub
+ws["B2"] = "PRIORIDADES FA, GENERALES 29N"; ws["B2"].font = f_title
+ws["B3"] = "Ateneo del Dato. Base para el mapa. Celdas en azul sobre amarillo: editables"; ws["B3"].font = f_sub
 
 ws["B5"] = "1. Prioridad provincial y peso"; ws["B5"].font = f_bold
 header(ws, 6, [None, "Prioridad provincial", "Peso", "Nº provincias", "Criterio"])
@@ -63,16 +63,18 @@ for i, (n, lab, w) in enumerate(NIVEL_PROV):
     ws.cell(row=r, column=5, value=crit[i]).font = f_base
 ws["C7"].comment = Comment("Pesos propuestos por Ateneo del Dato (8/11/2026). Multiplican el scoring de cada sección de la provincia.", "Ateneo")
 
-ws["B13"] = "2. Umbrales para Media y Baja"; ws["B13"].font = f_bold
+ws["B13"] = "2. Parámetros"; ws["B13"].font = f_bold
 header(ws, 14, [None, "Parámetro", "Valor"])
 ws.cell(row=14, column=1).fill = PatternFill(None)
-for i, (lab, v) in enumerate([("Media si el siguiente escaño entra con FA ≤", UMBRAL_MEDIA), ("Baja si el siguiente escaño entra con FA ≤", UMBRAL_BAJA)]):
+for i, (lab, v, fmt) in enumerate([("Provincia Media si el siguiente escaño entra con FA ≤", UMBRAL_MEDIA, "0.0%"),
+                                   ("Provincia Baja si el siguiente escaño entra con FA ≤", UMBRAL_BAJA, "0.0%"),
+                                   ("Municipios y CP: electores a partir de los que el tamaño no rebaja", TAM_REF, "#,##0")]):
     ws.cell(row=15 + i, column=2, value=lab).font = f_base
-    c = ws.cell(row=15 + i, column=3, value=v); c.font, c.fill, c.number_format = f_in, IN_FILL, "0.0%"
-ws.cell(row=17, column=2, value="Dato: columna «FA nacional para el siguiente escaño» del modelo (Provincias, col. N).").font = f_sub
+    c = ws.cell(row=15 + i, column=3, value=v); c.font, c.fill, c.number_format = f_in, IN_FILL, fmt
+ws.cell(row=18, column=2, value="FA nacional: columna «FA nacional para el siguiente escaño» del modelo (Provincias, col. N).").font = f_sub
 
-ws["B24"] = "3. Reparto de niveles (secciones, municipios y códigos postales)"; ws["B24"].font = f_bold
-header(ws, 25, [None, "Prioridad", "% acumulado", "Corte secciones", "Corte municipios"])
+ws["B24"] = "3. Escala de prioridad (común a secciones, municipios y códigos postales)"; ws["B24"].font = f_bold
+header(ws, 25, [None, "Prioridad", "% acumulado de secciones", "Corte (≥)"])
 ws.cell(row=25, column=1).fill = PatternFill(None)
 ws.column_dimensions["F"].width = 70
 for i, (lab, cum) in enumerate([("Máxima", 0.10), ("Alta", 0.20), ("Media", 0.40), ("Baja", 0.70)]):
@@ -80,21 +82,18 @@ for i, (lab, cum) in enumerate([("Máxima", 0.10), ("Alta", 0.20), ("Media", 0.4
     ws.cell(row=r, column=2, value=lab).font = f_base
     c = ws.cell(row=r, column=3, value=cum); c.font, c.fill, c.number_format = f_in, IN_FILL, "0%"
     ws.cell(row=r, column=4, value=f"=PERCENTILE(Secciones!$K$2:$K${len(d)+1},1-C{r})").number_format = "0.00"
-    ws.cell(row=r, column=5, value=f"=PERCENTILE(Municipios!$I$2:$I${len(mun)+1},1-C{r})").number_format = "0.00"
-    ws.cell(row=r, column=6, value=f"=PERCENTILE('Códigos postales'!$I$2:$I${len(cpd)+1},1-C{r})").number_format = "0.00"
-ws.cell(row=25, column=6, value="Corte códigos postales").font = f_head
-ws.cell(row=25, column=6).fill = H_FILL
 ws.cell(row=30, column=2, value="Nula").font = f_base
 ws.cell(row=30, column=3, value="resto").font = f_base
 
 notes = [
     "4. Cómo se calcula",
     "Scoring final de la sección = scoring original de la sección (prioridades_sscc.xlsx) × peso de su provincia.",
-    "Prioridad de la sección: Máxima si está en el 10 % más alto de España, Alta en el siguiente 10 %, Media 20 %, Baja 30 %, Nula el resto (cortes de la tabla 3).",
-    "Municipio y código postal: índice = scoring final medio de sus secciones (ponderado por censo) × log10(censo total). Se reescala a 0–10 dividiendo por el máximo.",
-    "El logaritmo premia el tamaño sin que las grandes ciudades se lo lleven todo: un municipio de 1 sección con 8 de scoring (≈ 800 electores) da 8 × 2,9 = 23,2; uno de 10 secciones con 7 (≈ 12.000) da 7 × 4,1 = 28,6, y queda por delante.",
-    "Las secciones sin scoring en el original (362) quedan como «Sin datos» y no entran en las medias, pero su censo sí cuenta en el tamaño del municipio.",
-    "Fuentes: prioridades_sscc.xlsx (scoring por sección, generales 2023 y 2019) · Prioridad_provincias_FA_29N_Ateneo.xlsx, pestaña Ranking (modelo de escaños, 18/10/2026) · cod_pos_sscc.csv (sección → código postal).",
+    "Prioridad de la sección: Máxima si está en el 10 % más alto de España, Alta en el siguiente 10 %, Media 20 %, Baja 30 %, Nula el resto. Esos cortes (tabla 3) son la escala de todos los niveles.",
+    "Municipio y código postal: índice = scoring final medio de sus secciones (ponderado por censo) × factor de tamaño. Factor = log10(censo) / log10(electores de la tabla 2), como mucho 1. Se clasifica con los cortes de la tabla 3.",
+    "Así un municipio solo es Máxima si sus secciones lo son de media, y el tamaño solo rebaja a los pequeños: 1 sección con 8 de scoring (≈ 800 electores) da 8 × 0,67 = 5,4; 10 secciones con 7 (≈ 12.000) da 7 × 0,95 = 6,6, y queda por delante.",
+    "Comunidad (hoja Comunidades): media de los pesos de sus provincias ponderada por censo, llevada al nivel provincial más cercano. Una comunidad de una sola provincia tiene el nivel de esa provincia.",
+    "Las secciones sin scoring en el original (362) no entran en las medias, pero su censo sí cuenta en el tamaño del municipio. En el mapa (seccionado 2025) toman la media de sus vecinas.",
+    "Fuentes: prioridades_sscc.xlsx (scoring por sección, generales 2023 y 2019); Prioridad_provincias_FA_29N_Ateneo.xlsx, pestaña Ranking (modelo de escaños, 18/10/2026); cod_pos_sscc.csv (sección a código postal).",
 ]
 for i, t in enumerate(notes):
     c = ws.cell(row=32 + i, column=2, value=t)
@@ -103,8 +102,7 @@ for i, t in enumerate(notes):
 
 # Referencias a cortes
 CUT_S = ["Método!$D$26", "Método!$D$27", "Método!$D$28", "Método!$D$29"]
-CUT_M = ["Método!$E$26", "Método!$E$27", "Método!$E$28", "Método!$E$29"]
-CUT_C = ["Método!$F$26", "Método!$F$27", "Método!$F$28", "Método!$F$29"]
+CUT_M = CUT_C = CUT_S
 def prio_formula(cell, cuts):
     return (f'=IF({cell}="","Sin datos",IF({cell}>={cuts[0]},"Máxima",IF({cell}>={cuts[1]},"Alta",'
             f'IF({cell}>={cuts[2]},"Media",IF({cell}>={cuts[3]},"Baja","Nula")))))')
@@ -138,6 +136,21 @@ for i, (cpro, p) in enumerate(prov.sort_values("rank_modelo").iterrows()):
 wp.freeze_panes = "C2"; wp.auto_filter.ref = f"A1:S{len(prov)+1}"
 wp.cell(row=len(prov) + 3, column=2, value="Fuente: Prioridad_provincias_FA_29N_Ateneo.xlsx (Ranking, escenario base, 18/10/2026). «Absoluta» marcada por el comité (8/11/2026).").font = f_sub
 
+# ── Comunidades: media de pesos provinciales ponderada por censo ─────
+wcc = wb.create_sheet("Comunidades")
+header(wcc, 1, ["Comunidad", "Provincias", "Censo 2023", "Peso medio (ponderado por censo)", "Prioridad"], [28, 10, 12, 16, 12])
+PC, PP, PG = "Provincias!$C$2:$C$53", "Provincias!$P$2:$P$53", "Provincias!$G$2:$G$53"
+for i, name in enumerate(sorted(first["ccaa_n"].unique())):
+    r = 2 + i
+    wcc.cell(row=r, column=1, value=name)
+    wcc.cell(row=r, column=2, value=f"=COUNTIF({PC},A{r})")
+    wcc.cell(row=r, column=3, value=f"=SUMIF({PC},A{r},{PP})").number_format = "#,##0"
+    wcc.cell(row=r, column=4, value=f"=SUMPRODUCT(({PC}=A{r})*{PG}*{PP})/C{r}").number_format = "0.000"
+    wcc.cell(row=r, column=5, value=f'=IF(D{r}>=(Método!$C$7+Método!$C$8)/2,"Máxima",IF(D{r}>=(Método!$C$8+Método!$C$9)/2,"Alta",IF(D{r}>=(Método!$C$9+Método!$C$10)/2,"Media",IF(D{r}>=(Método!$C$10+Método!$C$11)/2,"Baja","Nula"))))')
+    for j in range(1, 6): wcc.cell(row=r, column=j).font = f_base
+wcc.freeze_panes = "B2"
+wcc.cell(row=first["ccaa_n"].nunique() + 3, column=1, value="Nivel provincial más cercano: los cortes son los puntos medios entre los pesos de la tabla 1 de Método.").font = f_sub
+
 # ── Secciones ─────────────────────────────────────────────────────────
 wsec = wb.create_sheet("Secciones")
 cols = ["Sección", "Comunidad", "Provincia", "Cód. prov.", "Municipio", "Cód. municipio", "Código postal", "Censo 2023",
@@ -165,7 +178,7 @@ wsec.freeze_panes = "B2"; wsec.auto_filter.ref = f"A1:R{NS}"
 def agg_sheet(title, key_col, rows, keys_meta, extra_cols, extra_widths):
     w = wb.create_sheet(title)
     n = len(rows) + 1
-    cols = extra_cols + ["Secciones", "Censo 2023", "Scoring final medio", "Índice bruto", "Índice (0–10)", "Prioridad",
+    cols = extra_cols + ["Secciones", "Censo 2023", "Scoring final medio", "Factor tamaño", "Índice (0–10)", "Prioridad",
                          "Secciones Máxima o Alta"]
     header(w, 1, cols, extra_widths + [9, 11, 10, 10, 10, 10, 10])
     k = len(extra_cols)
@@ -177,8 +190,8 @@ def agg_sheet(title, key_col, rows, keys_meta, extra_cols, extra_widths):
         w.cell(row=r, column=k + 1, value=f"=COUNTIF({rng},A{r})")
         w.cell(row=r, column=k + 2, value=f"=SUMIF({rng},A{r},Secciones!$H$2:$H${NS})").number_format = "#,##0"
         w.cell(row=r, column=k + 3, value=f'=IFERROR(SUMIF({rng},A{r},Secciones!$M$2:$M${NS})/SUMIF({rng},A{r},Secciones!$N$2:$N${NS}),"")').number_format = "0.00"
-        w.cell(row=r, column=k + 4, value=f'=IF(OR({L(3)}{r}="",{L(2)}{r}<=1),"",{L(3)}{r}*LOG10({L(2)}{r}))').number_format = "0.00"
-        w.cell(row=r, column=k + 5, value=f'=IF({L(4)}{r}="","",10*{L(4)}{r}/MAX(${L(4)}$2:${L(4)}${n}))').number_format = "0.00"
+        w.cell(row=r, column=k + 4, value=f'=IF({L(2)}{r}<=1,"",MIN(1,LOG10({L(2)}{r})/LOG10(Método!$C$17)))').number_format = "0.00"
+        w.cell(row=r, column=k + 5, value=f'=IF(OR({L(3)}{r}="",{L(4)}{r}=""),"",{L(3)}{r}*{L(4)}{r})').number_format = "0.00"
         w.cell(row=r, column=k + 7, value=f'=COUNTIFS({rng},A{r},Secciones!$L$2:$L${NS},"Máxima")+COUNTIFS({rng},A{r},Secciones!$L$2:$L${NS},"Alta")')
     return w, n, L
 
