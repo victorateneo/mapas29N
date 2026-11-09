@@ -107,6 +107,8 @@ select, input[type="search"] {
 #panel.closed ~ #panel-open { display: inline-flex; }
 #panel.closed ~ #count { left: 16px; }
 .mut-sw { display: inline-block; width: 12px; height: 10px; border-radius: 2px; background: #E3E8F0; border: 1px solid rgba(0,25,44,.12); vertical-align: -1px; margin-right: 5px; }
+.ctrl-3d { font-weight: 800; font-size: 12px; letter-spacing: .02em; color: var(--oscuro); }
+.ctrl-3d[aria-pressed="true"] { background: var(--oscuro) !important; color: var(--blanco); }
 .maplibregl-ctrl-home .maplibregl-ctrl-icon { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
 
 #fatal { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: var(--fondo); z-index: 20; padding: 24px; }
@@ -349,11 +351,12 @@ async function init() {
       layers: [{ id: "bg", type: "background", paint: { "background-color": "#EEF2F8" } }]
     },
     bounds: [[-9.6, 35.8], [4.5, 43.9]], fitBoundsOptions: { padding: PAD() },
-    maxBounds: [[-22, 25], [9, 46.5]], minZoom: 4, maxZoom: 15, attributionControl: false
+    maxBounds: [[-22, 25], [9, 46.5]], minZoom: 4, maxZoom: 17, maxPitch: 70, attributionControl: false
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
   map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "Secciones y límites: INE 2025 · Datos: Ateneo del Dato" }));
   map.addControl(new HomeControl(), "top-right");
+  map.addControl(new ThreeDControl(), "top-right");
   await new Promise(r => map.on("load", r));
   buildLayers();
   bindUI();
@@ -429,6 +432,13 @@ function addBasemap() {
     layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#FFFFFF", "line-opacity": 0.85, "line-width": roadW(0.6, 4) } }, "mask");
   L("b-fronteras", "boundary", { type: "line", filter: ["all", ["==", ["get", "admin_level"], 2], ["!=", ["get", "maritime"], 1]],
     paint: { "line-color": "#9AA7BA", "line-width": 1, "line-dasharray": [3, 2] } }, "mask");
+  // Edificios en 3D (OpenStreetMap): solo en modo 3D y de cerca. Blancos y algo translúcidos,
+  // como una maqueta, para que el color de la sección se siga viendo en el suelo.
+  L("b-edificios", "building", { type: "fill-extrusion", minzoom: 13, layout: { visibility: S.d3 ? "visible" : "none" },
+    paint: { "fill-extrusion-color": "#FFFFFF", "fill-extrusion-vertical-gradient": true,
+      "fill-extrusion-height": ["interpolate", ["linear"], ["zoom"], 13, 0, 14.5, ["coalesce", ["get", "render_height"], 8]],
+      "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+      "fill-extrusion-opacity": 0.82 } }, "veil");
   // Nombres, por encima de todo
   const name = ["coalesce", ["get", "name:latin"], ["get", "name"]];   // nombre oficial local (A Coruña, Ourense, Girona…)
   const paint = { "text-color": "#00192C", "text-halo-color": "rgba(255,255,255,.92)", "text-halo-width": 1.6, "text-halo-blur": 0.3 };
@@ -449,6 +459,29 @@ function addBasemap() {
     paint: { ...paint, "text-color": "#6C7A8C" } });
 }
 
+// Botón «3D»: inclina el mapa y levanta los edificios. Con el botón derecho (o dos dedos) se gira.
+class ThreeDControl {
+  onAdd() {
+    const el = document.createElement("div");
+    el.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    el.innerHTML = `<button type="button" class="ctrl-3d" aria-pressed="false" title="Vista 3D con edificios">3D</button>`;
+    this.btn = el.querySelector("button");
+    this.btn.onclick = () => toggle3D(!S.d3);
+    return el;
+  }
+  onRemove() {}
+}
+function toggle3D(on) {
+  S.d3 = on;
+  document.querySelector(".ctrl-3d")?.setAttribute("aria-pressed", String(on));
+  if (map.getLayer("b-edificios")) map.setLayoutProperty("b-edificios", "visibility", on ? "visible" : "none");
+  if (on) {
+    const z = map.getZoom();
+    map.easeTo({ pitch: 60, bearing: -17, zoom: Math.max(z, 15), duration: 1600 });
+    if (z < 11) status("Vista 3D: busca un municipio o acércate a una ciudad para ver los edificios", 4000);
+  } else map.easeTo({ pitch: 0, bearing: 0, duration: 900 });
+}
+
 // Botón «centrar»: vuelve a la vista de partida (la del foco si hay una provincia o municipio abiertos)
 class HomeControl {
   onAdd() {
@@ -461,6 +494,8 @@ class HomeControl {
   onRemove() {}
 }
 function recenter() {
+  if (S.d3) { toggle3D(false); map.stop(); }
+  map.setPitch(0); map.setBearing(0);
   if (S.focus) return fit(bboxOf(S.focus.geom), { padding: PAD() });
   const c = document.getElementById("sel-ccaa").value;
   fit(c ? S.ccaaBBox[c] : homeBB());
