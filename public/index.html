@@ -97,6 +97,9 @@ select, input[type="search"] {
 #focus-bar b { font-family: var(--font-display); font-weight: 800; text-transform: uppercase; font-size: 14px; line-height: 1.15; overflow-wrap: anywhere; }
 #focus-bar button { flex: none; background: transparent; color: var(--blanco); border: 1px solid rgba(255,255,255,.5); border-radius: 3px; padding: 5px 8px; font-size: 11px; font-weight: 600; cursor: pointer; }
 #focus-bar button:hover { background: rgba(255,255,255,.12); }
+#scale-box { display: flex; flex-direction: column; gap: 6px; }
+#scale-box[hidden] { display: none; }
+.seg2c { grid-template-columns: repeat(2, 1fr); }
 .demo .lbl { color: var(--azul); }
 
 /* Panel plegable */
@@ -235,6 +238,13 @@ select, input[type="search"] {
         </div>
         <p class="hint" id="lv-hint"></p>
         <div id="focus-bar" hidden><div><span class="lbl" id="focus-type">Provincia</span><b id="focus-name"></b></div><button type="button" id="focus-exit">Volver a España</button></div>
+        <div id="scale-box" hidden>
+          <span class="lbl">Comparar con</span>
+          <div class="seg seg2c" role="group" aria-label="Escala de prioridad">
+            <button type="button" data-scale="espana" aria-pressed="true">Toda España</button>
+            <button type="button" data-scale="provincia" aria-pressed="false">Su provincia</button>
+          </div>
+        </div>
       </div>
       <div class="sec">
         <label class="lbl" for="sel-ccaa">Comunidad</label>
@@ -291,7 +301,7 @@ const PAD = () => (innerWidth < 760 ? { top: 20, bottom: 20, left: 20, right: 20
 
 // ── Estado ────────────────────────────────────────────────────────
 const S = {
-  level: "provincias", focus: null, meta: null, roles: null, role: "nacional", allowed: null,
+  level: "provincias", focus: null, scale: "espana", meta: null, roles: null, role: "nacional", allowed: null,
   filters: new Set([0, 1, 2, 3, 4, 5]),
   terr: null, mun: null, munFC: null, prov: null, ccaa: null,
   sscc: new Map(), ssccLoading: new Map(), cpro2cca: {}, provBBox: {}, ccaaBBox: {}
@@ -315,7 +325,12 @@ const inView = cca => isAllowed(cca) && (!S.sel || S.sel === cca);
 const viewSet = () => S.sel ? [S.sel] : S.allowed ? [...S.allowed] : null;
 const ccaaName = c => S.meta.ccaa.find(x => x.cca === c)?.name ?? "";
 const EMPTY = { type: "FeatureCollection", features: [] };
-const prioColor = ["match", ["get", "_p"], 0, P_COLOR[0], 1, P_COLOR[1], 2, P_COLOR[2], 3, P_COLOR[3], 4, P_COLOR[4], P_COLOR[5]];
+const prioBy = k => ["match", ["get", k], 0, P_COLOR[0], 1, P_COLOR[1], 2, P_COLOR[2], 3, P_COLOR[3], 4, P_COLOR[4], P_COLOR[5]];
+const prioColor = prioBy("_p");
+// Escala «Su provincia» (solo con una provincia o municipio abiertos): las secciones y municipios se
+// reparten 10/10/20/30/30 % comparándolos solo con los de su provincia.
+const provScale = () => !!S.focus && S.scale === "provincia";
+const pkey = () => provScale() ? "_pp" : "_p";
 
 function bboxOf(geom) {
   let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
@@ -549,8 +564,8 @@ function loadMunicipios() {
     const [mun, topo] = await Promise.all([getJSON(API.mun), getJSON(API.munGeo)]);
     S.mun = mun;
     const fc = topojson.feature(topo, topo.objects[Object.keys(topo.objects)[0]]);
-    const iP = mun.cols.indexOf("pidx");
-    fc.features.forEach(f => { const p = f.properties, row = mun.rows[p.CUMUN]; f.properties = { _id: p.CUMUN, _cca: p.CCA, _cpro: p.CUMUN.slice(0, 2), _p: row ? row[iP] : 5 }; });
+    const iP = mun.cols.indexOf("pidx"), iPP = mun.cols.indexOf("pprov");
+    fc.features.forEach(f => { const p = f.properties, row = mun.rows[p.CUMUN]; f.properties = { _id: p.CUMUN, _cca: p.CCA, _cpro: p.CUMUN.slice(0, 2), _p: row ? row[iP] : 5, _pp: row ? row[iPP] : 5 }; });
     S.munFC = fc;
     map.getSource("mun").setData(fc);
     buildSearch(); updateCounts();
@@ -562,8 +577,8 @@ function loadProvSscc(c) {
   if (!S.ssccLoading.has(c)) S.ssccLoading.set(c, (async () => {
     const [data, topo] = await Promise.all([getJSON(API.ssccData(c)), getJSON(API.ssccGeo(c))]);
     const fc = topojson.feature(topo, topo.objects[Object.keys(topo.objects)[0]]);
-    const iP = data.cols.indexOf("pidx"), cca = S.cpro2cca[c];
-    fc.features.forEach(f => { const id = f.properties.CUSEC, row = data.rows[id]; f.properties = { _id: id, _cca: cca, _cpro: c, _mun: id.slice(0, 5), _p: row ? row[iP] : 5 }; });
+    const iP = data.cols.indexOf("pidx"), iPP = data.cols.indexOf("pprov"), cca = S.cpro2cca[c];
+    fc.features.forEach(f => { const id = f.properties.CUSEC, row = data.rows[id]; f.properties = { _id: id, _cca: cca, _cpro: c, _mun: id.slice(0, 5), _p: row ? row[iP] : 5, _pp: row ? row[iPP] : 5 }; });
     S.sscc.set(c, { fc, data }); S.ssccLoading.delete(c);
   })());
   return S.ssccLoading.get(c);
@@ -660,6 +675,7 @@ function setFocus(fc) {
   document.getElementById("focus-type").textContent = fc.type === "prov" ? "Provincia" : `Municipio en ${S.meta.provincias[fc.cpro]}`;
   document.getElementById("focus-name").textContent = fc.name;
   bar.hidden = false;
+  document.getElementById("scale-box").hidden = false;
   setFocusView(S.focusView);
 }
 function clearFocus(restore = true) {
@@ -668,7 +684,16 @@ function clearFocus(restore = true) {
   map.setPaintProperty("prov-fill", "fill-color", prioColor);
   map.getSource("veil").setData(EMPTY); map.getSource("focus").setData(EMPTY);
   document.getElementById("focus-bar").hidden = true;
+  document.getElementById("scale-box").hidden = true;
+  setScale("espana");
   if (restore) { closePopup(); setLevel("provincias"); fit(homeBB()); }
+}
+
+function setScale(sc) {
+  S.scale = sc;
+  document.querySelectorAll("#scale-box button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.scale === sc)));
+  for (const id of ["mun-fill", "sscc-fill"]) map.setPaintProperty(id, "fill-color", prioBy(pkey()));
+  closePopup(); applyFilters();
 }
 
 // Al abrir una provincia o municipio de otra comunidad, la selección pasa a esa comunidad
@@ -682,9 +707,10 @@ function applyFilters() {
   const vs = viewSet();
   const roleF = vs ? ["in", ["get", "_cca"], ["literal", vs]] : true;
   const prioF = ["in", ["get", "_p"], ["literal", [...S.filters]]];
+  const prioFF = ["in", ["get", pkey()], ["literal", [...S.filters]]];
   const focusF = S.focus ? ["==", ["get", "_cpro"], S.focus.cpro] : true;
-  for (const id of ["mun-fill", "mun-line"]) map.setFilter(id, ["all", roleF, prioF, focusF]);
-  for (const id of ["sscc-fill", "sscc-line"]) map.setFilter(id, ["all", roleF, prioF, focusF]);
+  for (const id of ["mun-fill", "mun-line"]) map.setFilter(id, ["all", roleF, prioFF, focusF]);
+  for (const id of ["sscc-fill", "sscc-line"]) map.setFilter(id, ["all", roleF, prioFF, focusF]);
   map.setFilter("ccaa-fill", ["all", roleF, prioF]);
   map.setFilter("prov-fill", S.focus ? ["all", roleF] : ["all", roleF, prioF]);
   map.setFilter("mask", vs ? ["!", ["in", ["get", "_cca"], ["literal", vs]]] : ["boolean", false]);
@@ -708,12 +734,12 @@ function applyRole(me) {
 function levelRows() {
   if (S.focus && S.focusView === "municipios") {
     if (!S.mun) return [];
-    const iP = S.mun.cols.indexOf("pidx"), iC = S.mun.cols.indexOf("cpro");
+    const iP = S.mun.cols.indexOf(provScale() ? "pprov" : "pidx"), iC = S.mun.cols.indexOf("cpro");
     return Object.values(S.mun.rows).filter(r => r[iC] === S.focus.cpro).map(r => r[iP]);
   }
   if (S.focus) {
     const v = S.sscc.get(S.focus.cpro); if (!v) return [];
-    const iP = v.data.cols.indexOf("pidx"), iM = v.data.cols.indexOf("cumun");
+    const iP = v.data.cols.indexOf(provScale() ? "pprov" : "pidx"), iM = v.data.cols.indexOf("cumun");
     return Object.values(v.data.rows).filter(r => S.focus.type === "prov" || r[iM] === S.focus.id).map(r => r[iP]);
   }
   if (S.level === "municipios" && S.mun) {
@@ -733,11 +759,11 @@ function updateCounts() {
   if (!S.terr) return;
   const ps = levelRows(), cnt = [0, 0, 0, 0, 0, 0]; ps.forEach(p => cnt[p ?? 5]++);
   const filterable = true;
-  const lv = S.focus ? S.focusView : S.level, rng = chipRanges(lv);
-  document.getElementById("chips-lbl").textContent = { provincias: "Prioridad provincial", secciones: "Prioridad de la sección", municipios: "Prioridad municipal", ccaa: "Prioridad autonómica" }[lv];
-  document.getElementById("chips-note").innerHTML = CHIP_NOTE[lv] + (S.allowed || S.sel ? `<br><span class="mut-sw"></span>Gris: fuera de ${S.sel ? "la comunidad elegida" : "tu acceso"}.` : "");
+  const lv = S.focus ? S.focusView : S.level, rng = provScale() ? ["10 % más alto de la provincia", "siguiente 10 %", "siguiente 20 %", "siguiente 30 %", "30 % más bajo", ""] : chipRanges(lv);
+  document.getElementById("chips-lbl").textContent = { provincias: "Prioridad provincial", secciones: "Prioridad de la sección", municipios: "Prioridad municipal", ccaa: "Prioridad autonómica" }[lv] + (provScale() ? " en su provincia" : "");
+  document.getElementById("chips-note").innerHTML = (provScale() ? `Comparando solo con ${lv === "municipios" ? "los municipios" : "las secciones"} de ${S.meta.provincias[S.focus.cpro]}: el 10 % más alto de la provincia es Máxima, el siguiente 10 % Alta, 20 % Media, 30 % Baja y 30 % Nula.` : CHIP_NOTE[lv]) + (S.allowed || S.sel ? `<br><span class="mut-sw"></span>Gris: fuera de ${S.sel ? "la comunidad elegida" : "tu acceso"}.` : "");
   const chips = document.getElementById("chips");
-  chips.innerHTML = PRIOS.map((p, i) => i === 5 && !cnt[5] ? "" : `<button class="chip" data-i="${i}" aria-pressed="${S.filters.has(i)}" title="${rng[i] ? (lv === "provincias" || lv === "ccaa" ? "Peso " : "Valor ") + rng[i].replace("peso ", "") : ""}"><span class="sw" style="background:${P_COLOR[i]}"></span><span>${p}</span><span class="n num">${fmtN.format(cnt[i])}</span></button>`).join("");
+  chips.innerHTML = PRIOS.map((p, i) => i === 5 && !cnt[5] ? "" : `<button class="chip" data-i="${i}" aria-pressed="${S.filters.has(i)}" title="${rng[i] ? (provScale() ? rng[i] : (lv === "provincias" || lv === "ccaa" ? "Peso " : "Valor ") + rng[i].replace("peso ", "")) : ""}"><span class="sw" style="background:${P_COLOR[i]}"></span><span>${p}</span><span class="n num">${fmtN.format(cnt[i])}</span></button>`).join("");
   chips.querySelectorAll(".chip").forEach(b => b.onclick = () => {
     const i = +b.dataset.i;
     if (S.filters.has(i)) { if (S.filters.size > 1) S.filters.delete(i); } else S.filters.add(i);
@@ -751,7 +777,7 @@ function updateCounts() {
   const donde = S.focus ? (S.focus.type === "mun" ? (lv === "municipios" ? `el municipio de ${S.focus.name}` : `de ${S.focus.name}`) : `de ${S.focus.name}`)
     : S.sel ? `de ${ccaaName(S.sel)}` : S.allowed ? "de tus comunidades" : "de España";
   const prios = S.filters.size === 6 || S.filters.size === 5 && !S.filters.has(5) ? "todas las prioridades" : [...S.filters].filter(i => i < 5).sort().map(i => PRIOS[i]).join(", ");
-  document.getElementById("dl-hint").textContent = S.focus?.type === "mun" && lv === "municipios" ? `Exporta ${donde}.` : `Exporta ${lvN} ${donde}, con ${prios === "todas las prioridades" ? prios : "prioridad " + prios}.`;
+  document.getElementById("dl-hint").textContent = S.focus?.type === "mun" && lv === "municipios" ? `Exporta ${donde}.` : `Exporta ${lvN} ${donde}, con ${prios === "todas las prioridades" ? prios : "prioridad " + prios + (provScale() ? " en su provincia" : "")}.`;
 }
 function chipRanges(lv) {
   if (lv === "provincias" || lv === "ccaa") return S.meta.pesos_provincia.map(w => `peso ×${w.toFixed(2).replace(".", ",")}`);
@@ -814,11 +840,12 @@ function cmpRow(name, a, b) {
 function popupHTML(src, d) {
   const head = `<div class="pp-h"><span class="t">${d.tipo}</span><span class="n">${d.name}</span><span class="loc">${d.code ? d.code + "<br>" : ""}${d.loc ?? ""}</span></div>`;
   if (d.missing) return `<div class="pp">${head}<div class="pp-b"><p class="hint">Sin datos para esta sección.</p></div></div>`;
-  const pi = d.pidx ?? 5, agg = src !== "sscc";
+  const pi = (provScale() && (src === "sscc" || src === "mun") ? d.pprov : d.pidx) ?? 5, agg = src !== "sscc";
   const lab = src === "prov" ? S.meta.niveles_provincia[pi] : PRIOS[pi];
   const sLab = { sscc: "Scoring final", mun: "Índice municipal", prov: "Scoring final medio", ccaa: "Scoring final medio" }[src];
   let prio = `<div class="prio"><span class="pill" style="background:${P_COLOR[pi]};color:${P_TEXT[pi]};${pi === 5 ? "border:1px solid #D3D4CF" : ""}">${lab}</span>
       <div class="score"><div class="top"><span>${sLab}</span><b class="num">${d.score == null ? "—" : f1(d.score) + " / 10"}</b></div><div class="bar"><i style="width:${(d.score ?? 0) * 10}%;background:${pi >= 3 ? "#56A3FF" : P_COLOR[pi]}"></i></div></div></div>`;
+  if ((src === "sscc" || src === "mun") && d.pprov != null) prio += `<p class="hint">En su provincia: <b>${PRIOS[d.pprov]}</b>. En toda España: <b>${PRIOS[d.pidx ?? 5]}</b>.</p>`;
   if (src === "sscc" && d.score_orig != null) prio += `<p class="hint">Scoring de la sección ${f1(d.score_orig)} × peso provincial ${d.peso.toFixed(2).replace(".", ",")}</p>`;
   if (src === "mun" && d.score_medio != null) prio += `<p class="hint">Scoring medio de sus secciones <b>${f1(d.score_medio)}</b> × factor de tamaño <b>${d.factor == null ? "—" : d.factor.toFixed(2).replace(".", ",")}</b> (${d.censo23 == null ? "—" : fmtN.format(d.censo23)} electores)</p>`;
   if (src === "ccaa" && d.peso_medio != null) prio += `<p class="hint">Peso medio de sus provincias ×${d.peso_medio.toFixed(2).replace(".", ",")}, ponderado por población.</p>`;
@@ -893,16 +920,16 @@ async function buildCSV() {
     const provs = S.focus ? [S.focus.cpro] : Object.keys(S.meta.provincias).filter(c => inView(S.cpro2cca[c]));
     status(`Preparando ${provs.length} provincia${provs.length > 1 ? "s" : ""}…`);
     const datas = await Promise.all(provs.map(c => S.sscc.get(c)?.data ?? getJSON(API.ssccData(c))));
-    lines.push(["Sección", "Comunidad", "Provincia", "Municipio", "Scoring sección", "Peso provincial", "Scoring final", "Prioridad", ...VH].join(";"));
-    datas.forEach((data, i) => { const c = provs[i]; for (const [id, r] of Object.entries(data.rows)) { const o = rowObj(data.cols, r); if (!S.filters.has(o.pidx)) continue; if (S.focus?.type === "mun" && o.cumun !== S.focus.id) continue; lines.push([id, ccaaName(S.cpro2cca[c]), S.meta.provincias[c], S.mun.rows[o.cumun]?.[0] ?? "", o.score_orig, data.peso, o.score, PRIOS[o.pidx], ...VOTE.map(k => o[k])].map(csvCell).join(";")); } });
+    lines.push(["Sección", "Comunidad", "Provincia", "Municipio", "Scoring sección", "Scoring final", "Prioridad en España", "Prioridad en su provincia", ...VH].join(";"));
+    datas.forEach((data, i) => { const c = provs[i]; for (const [id, r] of Object.entries(data.rows)) { const o = rowObj(data.cols, r); if (!S.filters.has(provScale() ? o.pprov : o.pidx)) continue; if (S.focus?.type === "mun" && o.cumun !== S.focus.id) continue; lines.push([id, ccaaName(S.cpro2cca[c]), S.meta.provincias[c], S.mun.rows[o.cumun]?.[0] ?? "", o.score_orig, o.score, PRIOS[o.pidx], PRIOS[o.pprov], ...VOTE.map(k => o[k])].map(csvCell).join(";")); } });
   } else if (lv === "municipios") {
-    lines.push(["Cód. municipio", "Municipio", "Comunidad", "Provincia", "Índice municipal (0-10)", "Prioridad", "Scoring final medio", "Factor tamaño", "Nº secciones", "% censo en Máxima/Alta", ...VH].join(";"));
+    lines.push(["Cód. municipio", "Municipio", "Comunidad", "Provincia", "Índice municipal (0-10)", "Prioridad en España", "Prioridad en su provincia", "Scoring final medio", "Factor tamaño", "Nº secciones", "% censo en Máxima/Alta", ...VH].join(";"));
     for (const [id, r] of Object.entries(S.mun.rows)) {
       const o = rowObj(S.mun.cols, r);
-      if (!inView(S.cpro2cca[o.cpro]) || !S.filters.has(o.pidx)) continue;
+      if (!inView(S.cpro2cca[o.cpro]) || !S.filters.has(provScale() ? o.pprov : o.pidx)) continue;
       if (S.focus?.type === "prov" && o.cpro !== S.focus.cpro) continue;
       if (S.focus?.type === "mun" && id !== S.focus.id) continue;
-      lines.push([id, o.name, ccaaName(S.cpro2cca[o.cpro]), S.meta.provincias[o.cpro], o.score, PRIOS[o.pidx], o.score_medio, o.factor, o.n, o.pct_prior, ...VOTE.map(k => o[k])].map(csvCell).join(";"));
+      lines.push([id, o.name, ccaaName(S.cpro2cca[o.cpro]), S.meta.provincias[o.cpro], o.score, PRIOS[o.pidx], PRIOS[o.pprov], o.score_medio, o.factor, o.n, o.pct_prior, ...VOTE.map(k => o[k])].map(csvCell).join(";"));
     }
   } else {
     const isP = lv === "provincias", src = isP ? S.terr.provincias : S.terr.ccaa;
@@ -934,6 +961,7 @@ async function download() {
 function bindUI() {
   document.querySelectorAll(".seg button").forEach(b => b.onclick = () => { setLevel(b.dataset.lv); });
   document.getElementById("focus-exit").onclick = () => clearFocus(true);
+  document.querySelectorAll("#scale-box button").forEach(b => b.onclick = () => setScale(b.dataset.scale));
   document.getElementById("sel-ccaa").onchange = e => {
     S.sel = e.target.value || null;
     if (S.focus) clearFocus(false), setLevel(S.level);

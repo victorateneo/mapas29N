@@ -38,10 +38,12 @@ def s(x):
 # Datos electorales de 2023 por código; el scoring viene de secc25 (real o media de vecinas).
 SSCC_COLS = ["score", "pidx", "cumun", "score_orig", "v23", "censo23", "part23", "sumar23", "psoe23",
              "izqnac23", "izqmin23", "dcha23", "otros23",
-             "v19", "censo19", "part19", "sumar19", "psoe19", "izqnac19", "izqmin19", "dcha19", "otros19"]
-ELEC = SSCC_COLS[4:]
+             "v19", "censo19", "part19", "sumar19", "psoe19", "izqnac19", "izqmin19", "dcha19", "otros19", "pprov"]
+ELEC = SSCC_COLS[4:-1]
 d23 = d.set_index("cusec")
 s25 = R["secc25"]
+# Prioridad dentro de su provincia: mismo reparto 10/10/20/30/30 %, comparando solo con las de la provincia
+s25["nivel_prov_rel"] = s25.groupby("cpro")["score_final"].transform(levels_by_share).astype(int)
 for cpro, g in s25.groupby("cpro"):
     peso = float(prov.loc[cpro, "peso"])
     rows = {}
@@ -53,7 +55,7 @@ for cpro, g in s25.groupby("cpro"):
             if c in ("v23", "v19"): elec.append(s(x))
             elif c in ("censo23", "censo19"): elec.append(None if x is None or pd.isna(x) else int(x))
             else: elec.append(r(x))
-        rows[t.cusec] = [r(t.score_final), int(t.nivel), t.cumun, r(t.score_final / peso)] + elec
+        rows[t.cusec] = [r(t.score_final), int(t.nivel), t.cumun, r(t.score_final / peso)] + elec + [int(t.nivel_prov_rel)]
     json.dump({"cols": SSCC_COLS, "peso": peso, "rows": rows},
               open(f"{OUT}/sscc/{cpro}.json", "w"), ensure_ascii=False, separators=(",", ":"))
 
@@ -78,12 +80,14 @@ VOTE_COLS = ["n", "dist", "pct_prior", "score_medio", "v23", "censo23", "part23"
             ["v19", "censo19", "part19"] + [f"{p}19" for p in PCT]
 
 # ── Municipios ────────────────────────────────────────────────────────
-MUN_COLS = ["name", "cpro", "score", "pidx", "factor"] + VOTE_COLS
+MUN_COLS = ["name", "cpro", "score", "pidx", "factor"] + VOTE_COLS + ["pprov"]
+mun["cpro"] = [k[:2] for k in mun.index]
+mun["nivel_prov_rel"] = mun.groupby("cpro")["indice"].transform(levels_by_share).astype(int)
 mun_rows = {}
 for cumun, m in mun.iterrows():
     g = d[d["cumun"] == cumun]
     v = votos(g) if len(g) else {c: None for c in VOTE_COLS}   # municipios nuevos de 2025: sin datos de 2023
-    mun_rows[cumun] = [m["mun_n"], cumun[:2], r(m["indice"]), int(m["nivel"]), r(m.get("factor"))] + [v[c] for c in VOTE_COLS]
+    mun_rows[cumun] = [m["mun_n"], cumun[:2], r(m["indice"]), int(m["nivel"]), r(m.get("factor"))] + [v[c] for c in VOTE_COLS] + [int(m["nivel_prov_rel"])]
 json.dump({"cols": MUN_COLS, "rows": mun_rows}, open(f"{OUT}/municipios.json", "w"), ensure_ascii=False, separators=(",", ":"))
 
 # ── Provincias (nivel del comité/modelo) y CCAA ──────────────────────
