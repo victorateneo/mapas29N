@@ -1,7 +1,6 @@
 """Prioridad por par código postal y municipio (14.622 pares) con la lógica del mapa 29N.
 
-Base: los pares de Prioridad_codigos_postales_Espana.xlsx (3/11/2026). Se sustituye su
-scoring (de las europeas) por el del mapa:
+Base: los pares de Prioridad_codigos_postales_Espana.xlsx, con la lógica del mapa:
   - Pares con secciones: scoring final medio de las secciones de ese CP en ese municipio
     (ponderado por censo) × factor de tamaño. Mismos cortes que las secciones.
   - Pares sin secciones o cuyas secciones no tienen censo ni scoring: heredan el índice
@@ -48,8 +47,6 @@ for r in m.itertuples(index=False):
         sm = fac = cen = np.nan; ns = 0 if x is None else int(x["n_secc"])
     nota = []
     if isinstance(r[8], str) and r[8].strip(): nota.append("Código postal de otra provincia (enclave o municipio limítrofe).")
-    if isinstance(r.Notas, str) and r.Notas.startswith("Solo en Europeas"):
-        nota.append("Par que no figura en el listado oficial de códigos postales por municipio; se conserva del fichero anterior.")
     rows.append({"Código postal": cp, "Municipio": r.Municipio, "Cód. INE municipio": ine, "Provincia": r.Provincia,
                  "Comunidad": ccaa_n[ine[:2]], "cpro": ine[:2], "Índice (0-10)": idx, "Cálculo": src,
                  "Scoring final medio": sm, "Factor tamaño": fac, "Nº secciones": ns, "Censo 2023": cen, "Notas": " ".join(nota)})
@@ -66,7 +63,7 @@ ref = f"{TAM_REF:,}".replace(",", ".")
 n_sec = int(out["Cálculo"].str.startswith("Secc").sum())
 notes = [
     ["PRIORIDAD POR CÓDIGO POSTAL, ESPAÑA (29N)"], ["Ateneo del Dato, 9 de noviembre de 2026"], [],
-    ["Base: los 14.622 pares código postal y municipio de Prioridad_codigos_postales_Espana.xlsx (3/11/2026). Su scoring, que venía de las europeas, se sustituye por el cálculo del mapa del 29N."], [],
+    ["Base: los 14.622 pares código postal y municipio de Prioridad_codigos_postales_Espana.xlsx, con la misma lógica que el mapa del 29N y los ficheros de secciones y municipios."], [],
     ["Cómo se calcula"],
     ["1. Scoring final de cada sección censal = scoring de la sección (prioridades_sscc.xlsx) × peso de su provincia (1,00 Máxima, 0,90 Alta, 0,80 Media, 0,70 Baja, 0,55 Nula)."],
     ["2. Pares con secciones: scoring final medio de las secciones de ese código postal dentro de ese municipio, ponderado por censo, × factor de tamaño."],
