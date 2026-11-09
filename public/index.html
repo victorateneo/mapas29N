@@ -352,7 +352,7 @@ async function init() {
     maxBounds: [[-22, 25], [9, 46.5]], minZoom: 4, maxZoom: 15, attributionControl: false
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-  map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "Secciones y límites: INE 2025 · Datos: Ateneo del Dato · Mapa base: <a href=\"https://openfreemap.org\" target=\"_blank\">OpenFreeMap</a> © <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\">OpenStreetMap</a>" }));
+  map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "Secciones y límites: INE 2025 · Datos: Ateneo del Dato" }));
   map.addControl(new HomeControl(), "top-right");
   await new Promise(r => map.on("load", r));
   buildLayers();
@@ -409,7 +409,7 @@ function buildLayers() {
 // La fuente se añade después de cargar el mapa: si el mapa base no responde, el resto funciona igual.
 function addPlaceLabels() {
   map.addSource("omt", { type: "vector", url: "https://tiles.openfreemap.org/planet" });
-  const name = ["coalesce", ["get", "name:es"], ["get", "name"]];
+  const name = ["coalesce", ["get", "name:latin"], ["get", "name"]];   // nombre oficial local (A Coruña, Ourense, Girona…)
   const base = { type: "symbol", source: "omt", "source-layer": "place" };
   const paint = { "text-color": "#00192C", "text-halo-color": "rgba(255,255,255,.92)", "text-halo-width": 1.6, "text-halo-blur": 0.3 };
   const font = w => [w === "b" ? "Noto Sans Bold" : "Noto Sans Regular"];
