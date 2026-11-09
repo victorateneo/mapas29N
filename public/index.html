@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mapa de prioridades, Ateneo del Dato</title>
-<link rel="icon" href="data:,">
+<link rel="icon" type="image/png" href="/assets/logos/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;800&display=swap" rel="stylesheet">
@@ -44,6 +44,8 @@ header {
 .wordmark { font-family: var(--font-display); font-weight: 800; font-size: 15px; letter-spacing: .04em; line-height: 1; white-space: nowrap; }
 .wordmark small { display: block; font-size: 9px; letter-spacing: .32em; font-weight: 600; opacity: .7; margin-top: 3px; }
 .cross { opacity: .45; font-weight: 300; font-size: 18px; }
+.logo-ateneo { height: 36px; width: auto; display: block; }
+.logo-fa { height: 46px; width: 46px; display: block; }
 .client { font-weight: 600; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; border: 1px solid rgba(255,255,255,.35); padding: 5px 9px; border-radius: 3px; white-space: nowrap; }
 .title { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .title h1 { font-size: 17px; white-space: nowrap; }
@@ -199,6 +201,7 @@ select, input[type="search"] {
 
 @media (max-width: 760px) {
   .title .sub, .who span, .client { display: none; }
+  .logo-ateneo { height: 22px; } .logo-fa { height: 32px; width: 32px; }
   #panel { width: calc(100% - 32px); max-height: 46%; }
   #count { display: none; }
 }
@@ -209,9 +212,9 @@ select, input[type="search"] {
 <div id="app">
   <header>
     <div class="brand">
-      <div class="wordmark">ATENEO DEL DATO<small>DATOS PRECISOS</small></div>
+      <img class="logo-ateneo" src="/assets/logos/ateneo_blanco_horizontal.png" alt="Ateneo del Dato" width="135" height="32">
       <span class="cross" aria-hidden="true">×</span>
-      <span class="client">Frente Amplio</span>
+      <img class="logo-fa" src="/assets/logos/frente_amplio.png" alt="Frente Amplio" width="40" height="40">
     </div>
     <div class="title">
       <h1 class="display">Mapa de prioridades</h1>
