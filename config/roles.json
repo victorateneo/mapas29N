@@ -1,14 +1,52 @@
 {
   "_nota": "Quién ve qué. Cloudflare Access decide quién entra; este fichero decide qué comunidades ve cada persona. 'ccaa' usa códigos INE de comunidad ('*' = todas). Para dar de alta a alguien: añade su email en 'usuarios' con un rol, haz commit y la web se republica sola. Los dominios dan un rol a todo el que entre con ese dominio, salvo que su email esté en 'usuarios'.",
   "roles": {
-    "nacional":  { "nombre": "Ve todo", "ccaa": "*" },
-    "andalucia": { "nombre": "Andalucía", "ccaa": ["01"] },
-    "madrid":    { "nombre": "Comunidad de Madrid", "ccaa": ["13"] },
-    "cataluna":  { "nombre": "Cataluña", "ccaa": ["09"] },
-    "valencia":  { "nombre": "Comunitat Valenciana", "ccaa": ["10"] }
+    "nacional": {
+      "nombre": "Ve todo",
+      "ccaa": "*"
+    },
+    "andalucia": {
+      "nombre": "Andalucía",
+      "ccaa": [
+        "01"
+      ]
+    },
+    "madrid": {
+      "nombre": "Comunidad de Madrid",
+      "ccaa": [
+        "13"
+      ]
+    },
+    "cataluna": {
+      "nombre": "Cataluña",
+      "ccaa": [
+        "09"
+      ]
+    },
+    "valencia": {
+      "nombre": "Comunitat Valenciana",
+      "ccaa": [
+        "10"
+      ]
+    }
   },
   "dominios": {
     "ateneodeldato.com": "nacional"
   },
-  "usuarios": {}
+  "usuarios": {
+    "equipocoordinador@masmadrid.org": "nacional",
+    "octubre36@gmail.com": "nacional",
+    "alejoshop@gmail.com": "nacional",
+    "oscarurralburu@gmail.com": "nacional",
+    "lander625@gmail.com": "nacional",
+    "vemabar80@gmail.com": "nacional",
+    "ardeloquesera@gmail.com": "nacional",
+    "fcsanabria@gmail.com": "nacional",
+    "alicc2000@gmail.com": "nacional",
+    "bmartinezterritorial@gmail.com": "nacional",
+    "territorialencomu@gmail.com": "nacional",
+    "jorgegcastano@gmail.com": "nacional",
+    "movilizacion@frenteamplio.info": "nacional",
+    "lortiz@fpmaragall.org": "nacional"
+  }
 }
