@@ -28,6 +28,54 @@
       "ccaa": [
         "10"
       ]
+    },
+    "aragon": {
+      "nombre": "Aragón",
+      "ccaa": [
+        "02"
+      ]
+    },
+    "asturias": {
+      "nombre": "Principado de Asturias",
+      "ccaa": [
+        "03"
+      ]
+    },
+    "baleares": {
+      "nombre": "Illes Balears",
+      "ccaa": [
+        "04"
+      ]
+    },
+    "canarias": {
+      "nombre": "Canarias",
+      "ccaa": [
+        "05"
+      ]
+    },
+    "castillalamancha": {
+      "nombre": "Castilla-La Mancha",
+      "ccaa": [
+        "08"
+      ]
+    },
+    "galicia": {
+      "nombre": "Galicia",
+      "ccaa": [
+        "12"
+      ]
+    },
+    "murcia": {
+      "nombre": "Región de Murcia",
+      "ccaa": [
+        "14"
+      ]
+    },
+    "paisvasco": {
+      "nombre": "País Vasco",
+      "ccaa": [
+        "16"
+      ]
     }
   },
   "dominios": {
@@ -52,6 +100,31 @@
     "lopez.candela@gmail.com": "nacional",
     "jordimartigrau@gmail.com": "nacional",
     "gtarafa@bcn.cat": "nacional",
-    "urtasunernest@gmail.com": "nacional"
+    "urtasunernest@gmail.com": "nacional",
+    "gcorena@us.es": "andalucia",
+    "raulgarco97@gmail.com": "andalucia",
+    "flipaisimo5@hotmail.com": "andalucia",
+    "antonio.rodriguez@ateneodeldato.com": "andalucia",
+    "cuatroxp@yahoo.es": "aragon",
+    "isa.aina@gmail.com": "aragon",
+    "auroraribotlacosta@gmail.com": "baleares",
+    "mlucper@gmail.com": "baleares",
+    "rubenn.rhs@gmail.com": "canarias",
+    "marisolcolladomirabal@gmail.com": "canarias",
+    "luciasilesvera@gmail.com": "castillalamancha",
+    "j.plazasenabre@gmail.com": "castillalamancha",
+    "demian.bianquetti@gmail.com": "madrid",
+    "mar.rodriguez@me.com": "madrid",
+    "paulocarloslopez@gmail.com": "galicia",
+    "rocionunezrua@gmail.com": "galicia",
+    "estevosg@gmail.com": "galicia",
+    "albagarciamartin.bi@gmail.com": "paisvasco",
+    "edugarla31@gmail.com": "paisvasco",
+    "sergio.morenorios@gmail.com": "paisvasco",
+    "enarpez@gmail.com": "paisvasco",
+    "xabelvegas@gmail.com": "asturias",
+    "carolinaheviagetino@gmail.com": "asturias",
+    "educar.es.educarse@gmail.com": "murcia",
+    "juancarlospastor22@gmail.com": "murcia"
   }
 }
